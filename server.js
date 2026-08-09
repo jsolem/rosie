@@ -86,7 +86,9 @@ function defaultFamilyData() {
     },
     familyNotes: [], // [{ id, text, author, createdAt }] — real-time notes like "running 10 min late"
     sitterCode: null,
-    sitterCodeExpires: null
+    sitterCodeExpires: null,
+    chores: [], // [{ id, title, childName, amount, recurring, doneToday, lastDoneAt, createdAt }]
+    allowanceBalances: {} // { childName: dollarAmount } — running total, paid out manually
   };
 }
 
@@ -470,6 +472,143 @@ app.delete('/api/family/notes/:noteId', requireAuth, (req, res) => {
   writeFamilies(families);
 
   res.json({ ok: true });
+});
+
+// ══════════════════════════════════════════════
+// CHORES & ALLOWANCE
+// ══════════════════════════════════════════════
+
+app.post('/api/chores', requireAuth, (req, res) => {
+  const { title, childName, amount, recurring } = req.body;
+  if (!title || !childName) {
+    return res.status(400).json({ error: { message: 'Chore title and child name are required.' } });
+  }
+
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  const chore = {
+    id: crypto.randomBytes(8).toString('hex'),
+    title: title.trim(),
+    childName: childName.trim(),
+    amount: typeof amount === 'number' ? amount : parseFloat(amount) || 0,
+    recurring: !!recurring,
+    doneToday: false,
+    lastDoneAt: null,
+    createdAt: new Date().toISOString()
+  };
+
+  familyData.chores = familyData.chores || [];
+  familyData.chores.push(chore);
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ ok: true, chore });
+});
+
+app.put('/api/chores/:choreId/complete', requireAuth, (req, res) => {
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+  familyData.chores = familyData.chores || [];
+  familyData.allowanceBalances = familyData.allowanceBalances || {};
+
+  const chore = familyData.chores.find(c => c.id === req.params.choreId);
+  if (!chore) return res.status(404).json({ error: { message: 'Chore not found.' } });
+
+  if (chore.doneToday) {
+    return res.json({ ok: true, alreadyDone: true, chore, balances: familyData.allowanceBalances });
+  }
+
+  chore.doneToday = true;
+  chore.lastDoneAt = new Date().toISOString();
+
+  const child = chore.childName;
+  familyData.allowanceBalances[child] = (familyData.allowanceBalances[child] || 0) + chore.amount;
+
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ ok: true, chore, balances: familyData.allowanceBalances });
+});
+
+// Reset all recurring chores back to not-done — call this once a day
+// (client triggers it on the first load of a new day; simple and reliable
+// without needing a real cron job on the server)
+app.post('/api/chores/reset-recurring', requireAuth, (req, res) => {
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+  familyData.chores = familyData.chores || [];
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  let resetCount = 0;
+
+  familyData.chores.forEach(c => {
+    if (c.recurring && c.doneToday) {
+      const lastDoneDate = c.lastDoneAt ? c.lastDoneAt.split('T')[0] : null;
+      if (lastDoneDate !== todayStr) {
+        c.doneToday = false;
+        resetCount++;
+      }
+    }
+  });
+
+  if (resetCount > 0) {
+    families[user.familyId] = familyData;
+    writeFamilies(families);
+  }
+
+  res.json({ ok: true, resetCount, chores: familyData.chores });
+});
+
+app.delete('/api/chores/:choreId', requireAuth, (req, res) => {
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  familyData.chores = (familyData.chores || []).filter(c => c.id !== req.params.choreId);
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ ok: true });
+});
+
+// Pay out and reset a child's balance to $0
+app.post('/api/allowance/payout', requireAuth, (req, res) => {
+  const { childName } = req.body;
+  if (!childName) {
+    return res.status(400).json({ error: { message: 'Child name is required.' } });
+  }
+
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+  familyData.allowanceBalances = familyData.allowanceBalances || {};
+
+  const paidAmount = familyData.allowanceBalances[childName] || 0;
+  familyData.allowanceBalances[childName] = 0;
+
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ ok: true, paidAmount, balances: familyData.allowanceBalances });
 });
 
 // ══════════════════════════════════════════════

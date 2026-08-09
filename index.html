@@ -4669,6 +4669,9 @@ async function dismissFamilyNote(noteId) {
   }
 }
 
+let logoutConfirmPending = false;
+let logoutConfirmTimer = null;
+
 function handleLogoutClick() {
   const btn = document.getElementById('logout-btn');
 

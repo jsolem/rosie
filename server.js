@@ -1,6 +1,8 @@
-// Rosie — Production Server (v2: real accounts, server-side data)
-// Serves the frontend, proxies Claude requests, and now owns all
-// account/family data so it syncs across every device the user logs in on.
+// Rosie — Production Server (v3: shared families, invite-code co-parent linking)
+// Serves the frontend, proxies Claude requests, and owns all account/family
+// data. Multiple parent accounts can now share one family's data via an
+// invite code, so both parents stay in sync on the same schedule, meds,
+// grocery list, and conversation history.
 
 require('dotenv').config();
 const express  = require('express');
@@ -15,10 +17,11 @@ const crypto   = require('crypto');
 const app = express();
 const HTTP_PORT  = process.env.PORT || 3002;
 const HTTPS_PORT = 8443;
-const DOMAIN      = 'rosieai.duckdns.org';
-const CERT_PATH   = `/etc/letsencrypt/live/${DOMAIN}`;
-const DATA_DIR    = path.join(__dirname, 'data');
-const USERS_FILE  = path.join(DATA_DIR, 'users.json');
+const DOMAIN       = 'rosieai.duckdns.org';
+const CERT_PATH    = `/etc/letsencrypt/live/${DOMAIN}`;
+const DATA_DIR     = path.join(__dirname, 'data');
+const USERS_FILE   = path.join(DATA_DIR, 'users.json');
+const FAMILIES_FILE = path.join(DATA_DIR, 'families.json');
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -29,29 +32,39 @@ if (!ANTHROPIC_API_KEY) {
 }
 
 // ══════════════════════════════════════════════
-// DATA LAYER — simple JSON file store, one file for all users
+// DATA LAYER
+// users.json    -> { email: { name, passwordHash, familyId, elevenLabsKey, ... } }
+// families.json -> { familyId: { family, events, meds, grocery, meals, conversation, hasSeenIntro, inviteCode, inviteCodeExpires } }
+//
+// Login credentials and the ElevenLabs voice key stay per-user (personal).
+// Everything else (kids, events, meds, etc.) lives on the family record,
+// shared by every user whose account points at that familyId.
 // ══════════════════════════════════════════════
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({}));
+if (!fs.existsSync(FAMILIES_FILE)) fs.writeFileSync(FAMILIES_FILE, JSON.stringify({}));
 
-function readUsers() {
+function readJSON(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (err) {
-    console.error('Failed to read users file:', err);
+    console.error(`Failed to read ${filePath}:`, err);
     return {};
   }
 }
 
-function writeUsers(users) {
-  // Write to a temp file then rename — avoids corruption if the process
-  // dies mid-write, same safety pattern as Ruthie's data files.
-  const tmpPath = USERS_FILE + '.tmp';
-  fs.writeFileSync(tmpPath, JSON.stringify(users, null, 2));
-  fs.renameSync(tmpPath, USERS_FILE);
+function writeJSON(filePath, data) {
+  const tmpPath = filePath + '.tmp';
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+  fs.renameSync(tmpPath, filePath);
 }
 
-function defaultProfile() {
+const readUsers      = () => readJSON(USERS_FILE);
+const writeUsers     = (u) => writeJSON(USERS_FILE, u);
+const readFamilies   = () => readJSON(FAMILIES_FILE);
+const writeFamilies  = (f) => writeJSON(FAMILIES_FILE, f);
+
+function defaultFamilyData() {
   return {
     family: { name: '', children: [], diet: { type: 'omnivore', allergies: [], dislikes: [], cuisines: [], timeLimit: 30 }, contacts: [] },
     events: [],
@@ -59,14 +72,27 @@ function defaultProfile() {
     grocery: [],
     meals: [],
     conversation: [],
-    elevenLabsKey: null
+    hasSeenIntro: false,
+    inviteCode: null,
+    inviteCodeExpires: null,
+    members: [] // array of emails belonging to this family
   };
+}
+
+function generateFamilyId() {
+  return crypto.randomBytes(12).toString('hex');
+}
+
+function generateInviteCode() {
+  // Short, readable, no ambiguous characters (no 0/O, 1/I/l)
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
 }
 
 // ══════════════════════════════════════════════
 // AUTH — simple bearer token, tokens stored in memory
-// (a restart clears sessions, same tradeoff as a JWT with no persistence;
-//  fine for a small family app — everyone just logs in again)
 // ══════════════════════════════════════════════
 const activeSessions = new Map(); // token -> email
 
@@ -109,12 +135,22 @@ app.post('/api/auth/signup', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const answerHash    = await bcrypt.hash(securityAnswer.trim().toLowerCase(), 10);
 
+    // Every new signup gets their own new family by default.
+    // They can later join someone else's family via invite code,
+    // which re-points familyId and (for now) discards this empty one.
+    const families = readFamilies();
+    const familyId = generateFamilyId();
+    families[familyId] = defaultFamilyData();
+    families[familyId].members = [normalizedEmail];
+    writeFamilies(families);
+
     users[normalizedEmail] = {
       name,
       passwordHash,
       securityQuestion,
       securityAnswerHash: answerHash,
-      profile: defaultProfile(),
+      familyId,
+      elevenLabsKey: null,
       createdAt: new Date().toISOString()
     };
     writeUsers(users);
@@ -198,7 +234,6 @@ app.post('/api/auth/reset/verify', async (req, res) => {
     return res.status(401).json({ error: { message: "That answer doesn't match. Try again." } });
   }
 
-  // Short-lived reset token, separate from login sessions
   const resetToken = generateToken();
   activeSessions.set('reset:' + resetToken, normalizedEmail);
 
@@ -233,42 +268,152 @@ app.post('/api/auth/reset/complete', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════
-// PROFILE DATA ENDPOINTS — get/save everything, synced per account
+// PROFILE DATA ENDPOINTS — reads/writes the shared family record
 // ══════════════════════════════════════════════
 
 app.get('/api/profile', requireAuth, (req, res) => {
   const users = readUsers();
-  const user = users[req.userEmail];
+  const user  = users[req.userEmail];
   if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
-  res.json(user.profile || defaultProfile());
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  // elevenLabsKey is personal, not shared — comes from the user record
+  res.json({ ...familyData, elevenLabsKey: user.elevenLabsKey || null });
 });
 
 app.put('/api/profile', requireAuth, (req, res) => {
   const users = readUsers();
-  const user = users[req.userEmail];
+  const user  = users[req.userEmail];
   if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
 
-  // Merge shallowly — the client sends the full profile object each time
-  user.profile = { ...defaultProfile(), ...user.profile, ...req.body };
-  writeUsers(users);
+  const families = readFamilies();
+  const existing  = families[user.familyId] || defaultFamilyData();
+
+  // elevenLabsKey never gets written to the shared family record —
+  // strip it out before merging, it's saved separately per-user.
+  const { elevenLabsKey, ...familyFields } = req.body;
+
+  families[user.familyId] = { ...defaultFamilyData(), ...existing, ...familyFields, members: existing.members };
+  writeFamilies(families);
+
   res.json({ ok: true });
 });
 
-// ── Convenience endpoint for just the ElevenLabs key, since Settings saves it independently ──
 app.put('/api/profile/elevenlabs-key', requireAuth, (req, res) => {
   const { key } = req.body;
   const users = readUsers();
   const user = users[req.userEmail];
   if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
 
-  user.profile = user.profile || defaultProfile();
-  user.profile.elevenLabsKey = key || null;
+  user.elevenLabsKey = key || null;
   writeUsers(users);
   res.json({ ok: true });
 });
 
 // ══════════════════════════════════════════════
-// CLAUDE CHAT PROXY — unchanged, still keeps the Anthropic key server-side
+// CO-PARENT LINKING — invite code system
+// ══════════════════════════════════════════════
+
+// Generate (or refresh) an invite code for the current user's family
+app.post('/api/family/invite', requireAuth, (req, res) => {
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  const code = generateInviteCode();
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+
+  familyData.inviteCode = code;
+  familyData.inviteCodeExpires = expires;
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ code, expiresAt: expires });
+});
+
+// Join another family using their invite code.
+// The joining user's OWN family record is abandoned (their data, if any,
+// stays in storage but is no longer linked to any active user) and their
+// account is re-pointed at the inviting family.
+app.post('/api/family/join', requireAuth, (req, res) => {
+  const { code } = req.body;
+  if (!code || code.trim().length === 0) {
+    return res.status(400).json({ error: { message: 'Please enter an invite code.' } });
+  }
+
+  const normalizedCode = code.trim().toUpperCase();
+  const users = readUsers();
+  const joiningUser = users[req.userEmail];
+  if (!joiningUser) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+
+  // Find the family with this active, unexpired invite code
+  const targetFamilyId = Object.keys(families).find(fid => {
+    const f = families[fid];
+    return f.inviteCode === normalizedCode &&
+           f.inviteCodeExpires &&
+           new Date(f.inviteCodeExpires) > new Date();
+  });
+
+  if (!targetFamilyId) {
+    return res.status(404).json({ error: { message: 'That code is invalid or has expired. Ask for a new one.' } });
+  }
+
+  if (targetFamilyId === joiningUser.familyId) {
+    return res.status(400).json({ error: { message: "You're already part of this family." } });
+  }
+
+  // Re-point the joining user at the target family
+  const oldFamilyId = joiningUser.familyId;
+  joiningUser.familyId = targetFamilyId;
+  writeUsers(users);
+
+  // Add them to the members list, remove the old empty family record
+  families[targetFamilyId].members = families[targetFamilyId].members || [];
+  if (!families[targetFamilyId].members.includes(req.userEmail)) {
+    families[targetFamilyId].members.push(req.userEmail);
+  }
+  // Clear the invite code once used so it can't be reused indefinitely
+  families[targetFamilyId].inviteCode = null;
+  families[targetFamilyId].inviteCodeExpires = null;
+
+  // Clean up the old family record only if no one else is on it
+  if (families[oldFamilyId] && (!families[oldFamilyId].members || families[oldFamilyId].members.length <= 1)) {
+    delete families[oldFamilyId];
+  } else if (families[oldFamilyId]) {
+    families[oldFamilyId].members = families[oldFamilyId].members.filter(m => m !== req.userEmail);
+  }
+
+  writeFamilies(families);
+
+  res.json({ ok: true, memberCount: families[targetFamilyId].members.length });
+});
+
+// Get info about who's currently sharing this family (for display in Settings)
+app.get('/api/family/members', requireAuth, (req, res) => {
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  const memberNames = (familyData.members || []).map(email => ({
+    email,
+    name: users[email]?.name || email
+  }));
+
+  res.json({ members: memberNames });
+});
+
+// ══════════════════════════════════════════════
+// CLAUDE CHAT PROXY
 // ══════════════════════════════════════════════
 app.post('/api/rosie/chat', async (req, res) => {
   try {

@@ -1939,7 +1939,8 @@ function defaultProfile() {
     grocery: [],
     meals: [],
     conversation: [],
-    elevenLabsKey: null
+    elevenLabsKey: null,
+    hasSeenIntro: false
   };
 }
 
@@ -1993,6 +1994,8 @@ const DB = {
   getConversation: () => profileCache?.conversation || [],
   setConversation: (c) => { profileCache.conversation = c; DB.saveToServer(); },
   getElevenLabsKey: () => profileCache?.elevenLabsKey || null,
+  getHasSeenIntro: () => profileCache?.hasSeenIntro === true,
+  setHasSeenIntro: () => { profileCache.hasSeenIntro = true; DB.saveToServer(); },
 };
 
 // ══════════════════════════════════════════════
@@ -2207,7 +2210,7 @@ async function handleResetStep3() {
 function launchApp() {
   document.getElementById('login-screen').classList.add('hidden');
   const family   = DB.getFamily();
-  const isNew    = !family.name && family.children.length === 0;
+  const isNew    = !DB.getHasSeenIntro();
   const history  = DB.getConversation();
 
   // Restore conversation history visually
@@ -2225,6 +2228,7 @@ function launchApp() {
   updateHud();
   if (isNew) {
     typeMessage("Hi! I'm Rosie — I'll help keep your family organized: schedules, medications, meals, all of it.\n\nLet's get you set up. First, tell me about your kids — just say something like \"I have a daughter named Emma, she's 7 and goes to Lincoln Elementary.\" Add one child at a time, or all at once, whatever's easiest.\n\nOnce I know your kids, I'll ask about any allergies or diet preferences, then we can add anything else — upcoming events, medications, whatever's on your mind.\n\nPrefer to just type everything out yourself instead of a back-and-forth? Tap the ⚙️ Settings icon and use \"Quick Setup\" to fill it all in at once.\n\nReady when you are — what's your child's name?");
+    DB.setHasSeenIntro();
   } else {
     generateGreeting(family);
   }

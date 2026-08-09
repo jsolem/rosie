@@ -2456,6 +2456,29 @@
   </button>
   <div id="sitter-status" style="text-align:center;font-size:13px;margin-top:6px;min-height:18px;color:var(--sage);"></div>
 
+  <div id="admin-panel" style="display:none;">
+    <div style="height:1px;background:var(--border);margin:22px 0 18px;"></div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">
+      📊 Usage (Admin Only)
+    </div>
+    <div style="font-size:13px;color:var(--txt3);margin-bottom:12px;line-height:1.5;">
+      Visible only to you — shows how test families are actually using Rosie.
+    </div>
+
+    <div id="admin-summary" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px;"></div>
+
+    <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;">
+      Most Used Features (7 days)
+    </div>
+    <div id="admin-actions-7d" style="margin-bottom:16px;"></div>
+
+    <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;">
+      Families
+    </div>
+    <div id="admin-families-list"></div>
+  </div>
+
   <div style="height:1px;background:var(--border);margin:22px 0 16px;"></div>
 
   <button id="logout-btn" onclick="handleLogoutClick()" style="
@@ -2477,6 +2500,101 @@
 let authToken = null;
 let profileCache = null;
 let saveDebounceTimer = null;
+
+// ══════════════════════════════════════════════
+// USAGE TRACKING — lightweight, fire-and-forget. Never blocks the
+// actual feature if logging fails, and never sends message content.
+// ══════════════════════════════════════════════
+function logUsageAction(action) {
+  if (!authToken || !action) return;
+  fetch('/api/usage/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+    body: JSON.stringify({ action })
+  }).catch(() => {}); // best-effort — never let this break the real feature
+}
+
+// Attempts to load the admin usage dashboard. The server is the real
+// gatekeeper here (403s non-admins) — the frontend just tries and shows
+// the panel only on success, so there's no client-side admin list to
+// accidentally expose or get out of sync.
+async function tryLoadAdminPanel() {
+  const panel = document.getElementById('admin-panel');
+  if (!authToken) { panel.style.display = 'none'; return; }
+
+  try {
+    const res = await fetch('/api/usage/stats', {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+
+    if (!res.ok) { panel.style.display = 'none'; return; }
+
+    const stats = await res.json();
+    panel.style.display = 'block';
+    renderAdminPanel(stats);
+  } catch (err) {
+    panel.style.display = 'none';
+  }
+}
+
+function renderAdminPanel(stats) {
+  const summaryEl = document.getElementById('admin-summary');
+  summaryEl.innerHTML = `
+    <div style="text-align:center; padding:10px 6px; background:var(--bg3); border-radius:var(--radius-sm);">
+      <div style="font-family:var(--mono); font-size:20px; color:var(--amber);">${stats.totalFamilies}</div>
+      <div style="font-size:10px; color:var(--txt3);">Total Families</div>
+    </div>
+    <div style="text-align:center; padding:10px 6px; background:var(--bg3); border-radius:var(--radius-sm);">
+      <div style="font-family:var(--mono); font-size:20px; color:var(--green);">${stats.activeFamilies7d}</div>
+      <div style="font-size:10px; color:var(--txt3);">Active (7d)</div>
+    </div>
+    <div style="text-align:center; padding:10px 6px; background:var(--bg3); border-radius:var(--radius-sm);">
+      <div style="font-family:var(--mono); font-size:20px; color:var(--rose);">${stats.totalEvents}</div>
+      <div style="font-size:10px; color:var(--txt3);">Total Actions</div>
+    </div>`;
+
+  const actionsEl = document.getElementById('admin-actions-7d');
+  const sortedActions = Object.entries(stats.actionCounts7d || {}).sort((a, b) => b[1] - a[1]);
+  actionsEl.innerHTML = sortedActions.length > 0
+    ? sortedActions.map(([action, count]) => `
+        <div class="data-row">
+          <div class="data-row-label">${escapeHtml(formatActionName(action))}</div>
+          <div class="mono-val">${count}</div>
+        </div>`).join('')
+    : '<div class="panel-empty">No activity in the last 7 days.</div>';
+
+  const familiesEl = document.getElementById('admin-families-list');
+  familiesEl.innerHTML = stats.families.length > 0
+    ? stats.families.map(f => {
+        const daysSinceActive = f.lastActive
+          ? Math.floor((Date.now() - new Date(f.lastActive)) / (1000 * 60 * 60 * 24))
+          : null;
+        const isStale = daysSinceActive === null || daysSinceActive > 7;
+        return `
+          <div class="data-row" style="align-items:flex-start;">
+            <div class="data-row-left">
+              <div class="data-row-label">${f.memberNames.map(escapeHtml).join(' & ') || 'Unknown'}</div>
+              <div class="data-row-sub">${f.totalActions} actions total · ${daysSinceActive === null ? 'never active' : daysSinceActive === 0 ? 'active today' : daysSinceActive + 'd ago'}</div>
+            </div>
+            <div class="data-row-status ${isStale ? 'status-due' : 'status-given'}">${isStale ? 'QUIET' : 'ACTIVE'}</div>
+          </div>`;
+      }).join('')
+    : '<div class="panel-empty">No families yet.</div>';
+}
+
+function formatActionName(action) {
+  const labels = {
+    ADD_EVENT: 'Added event', UPDATE_EVENT: 'Edited event', DELETE_EVENT: 'Deleted event',
+    ADD_MED: 'Added medication', LOG_MED_DOSE: 'Logged medication',
+    ADD_GROCERY: 'Added groceries', check_grocery_item: 'Checked off grocery item',
+    ADD_CHILD: 'Added child', UPDATE_DIET: 'Updated diet profile',
+    LOG_MEAL: 'Logged a meal', POST_FAMILY_NOTE: 'Posted family note',
+    ADD_CHORE: 'Added chore', complete_chore: 'Completed chore',
+    UPDATE_EMERGENCY_INFO: 'Updated emergency info',
+    send_message: 'Sent a message to Rosie', photo_scan: 'Scanned a photo'
+  };
+  return labels[action] || action;
+}
 
 // ══════════════════════════════════════════════
 // THEMES — preset palettes + custom colors, applied as CSS variables
@@ -3005,6 +3123,7 @@ const MAX_HISTORY = 30;
 async function sendMessage(text) {
   if (!text.trim()) return;
 
+  logUsageAction('send_message');
   addMessage('user', text);
   conversationHistory.push({ role: 'user', content: text });
 
@@ -3243,6 +3362,8 @@ Always respond with the JSON block. Keep speech warm, brief, and conversational.
 // ACTION EXECUTOR
 // ══════════════════════════════════════════════
 function executeAction(action) {
+  logUsageAction(action.type);
+
   const family = DB.getFamily();
   const events = DB.getEvents();
   const meds   = DB.getMeds();
@@ -4170,6 +4291,7 @@ function updateHud() {
 }
 
 function checkGroceryItem(itemId) {
+  logUsageAction('check_grocery_item');
   const grocery = DB.getGrocery();
   const updated = grocery.map(g => g.id === itemId ? { ...g, checked: true, checkedAt: new Date().toISOString() } : g);
   DB.setGrocery(updated);
@@ -4236,6 +4358,7 @@ async function submitNewChore() {
 }
 
 async function completeChore(choreId) {
+  logUsageAction('complete_chore');
   try {
     const res = await fetch(`/api/chores/${choreId}/complete`, {
       method: 'PUT',
@@ -4359,6 +4482,7 @@ function showScanError(message) {
 }
 
 async function scanImageForEvent(base64, mediaType) {
+  logUsageAction('photo_scan');
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   const todayName = now.toLocaleDateString('en-US', { weekday: 'long' });
@@ -4627,6 +4751,7 @@ function openSettings() {
 
   loadFamilyMembers();
   renderThemePresetGrid();
+  tryLoadAdminPanel();
 }
 
 function closeSettings() {

@@ -1551,6 +1551,92 @@
     letter-spacing: 0.03em;
   }
 
+  /* ── SITTER VIEW ── */
+  #sitter-view {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 500;
+    overflow-y: auto;
+    flex-direction: column;
+  }
+
+  #sitter-view.active { display: flex; }
+
+  #sitter-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  #sitter-body {
+    flex: 1;
+    padding: 16px 16px 40px;
+    max-width: 520px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .sitter-alert-banner {
+    background: var(--red-dim);
+    border: 1px solid rgba(224,96,96,0.3);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+
+  .sitter-alert-banner-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--red);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+
+  .sitter-note-item {
+    padding: 10px 12px;
+    background: var(--bg3);
+    border-radius: var(--radius-xs);
+    margin-bottom: 6px;
+    font-size: 13.5px;
+    color: var(--txt);
+  }
+
+  .sitter-note-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--txt3);
+    margin-top: 3px;
+  }
+
+  .sitter-section-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 20px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sitter-row {
+    padding: 9px 11px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    margin-bottom: 6px;
+    font-size: 13.5px;
+  }
+
+  .sitter-row-label { color: var(--txt); font-weight: 500; }
+  .sitter-row-sub { color: var(--txt3); font-size: 12px; margin-top: 2px; }
+
   /* ── RESPONSIVE ── */
   @media (min-width: 481px) {
     #app {
@@ -1872,6 +1958,25 @@
   </div>
 </div>
 
+<!-- ══════════════ SITTER VIEW — no login, read-only ══════════════ -->
+<div id="sitter-view">
+  <div id="sitter-header">
+    <div class="logo-orb" style="width:30px;height:30px;"></div>
+    <div>
+      <div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--txt);">Rosie</div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--txt3);letter-spacing:0.1em;text-transform:uppercase;">Sitter View</div>
+    </div>
+  </div>
+
+  <div id="sitter-body">
+    <div id="sitter-loading" style="text-align:center;padding:60px 20px;color:var(--txt3);font-family:var(--mono);font-size:13px;">
+      Loading…
+    </div>
+    <div id="sitter-error" style="display:none;text-align:center;padding:60px 24px;color:var(--red);font-size:14px;line-height:1.5;"></div>
+    <div id="sitter-content" style="display:none;"></div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
@@ -1975,6 +2080,37 @@
     Join a Family
   </button>
   <div id="family-status" style="text-align:center;font-size:13px;margin-top:6px;min-height:18px;color:var(--sage);"></div>
+
+  <div style="height:1px;background:var(--border);margin:22px 0 18px;"></div>
+
+  <div style="font-size:12px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">
+    👶 Babysitter Access
+  </div>
+  <div style="font-size:13px;color:var(--txt3);margin-bottom:12px;line-height:1.5;">
+    Give a sitter a read-only link — today's schedule, allergies, emergency contacts, and any notes you leave. No login needed. Expires in 24 hours.
+  </div>
+
+  <button class="btn-primary" onclick="generateSitterLink()" style="margin-bottom:10px; background:linear-gradient(140deg, #2a8e5e, #5ec888);">
+    Create Sitter Link
+  </button>
+  <div id="sitter-link-display" style="display:none; margin-bottom:14px;">
+    <div style="font-family:var(--mono); font-size:12px; color:var(--green); background:var(--green-dim); border-radius:var(--radius-sm); padding:12px; margin-bottom:8px; word-break:break-all;" id="sitter-link-value"></div>
+    <button onclick="copySitterLink()" style="
+      width:100%; padding:9px; border-radius:var(--radius-xs);
+      border:1px solid var(--border); background:var(--bg3);
+      color:var(--txt2); font-family:'DM Sans',sans-serif;
+      font-size:12.5px; cursor:pointer;
+    ">Copy Link</button>
+  </div>
+
+  <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:16px 0 6px;">
+    Leave a note for whoever's home
+  </div>
+  <input class="input-field" type="text" id="quick-note-input" placeholder="e.g. Running 10 min late, traffic" style="margin-bottom:8px;">
+  <button class="btn-primary" onclick="postFamilyNote()" style="margin-bottom:6px; background:linear-gradient(140deg, #2a8e5e, #5ec888);">
+    Post Note
+  </button>
+  <div id="sitter-status" style="text-align:center;font-size:13px;margin-top:6px;min-height:18px;color:var(--sage);"></div>
 
   <div style="height:1px;background:var(--border);margin:22px 0 16px;"></div>
 
@@ -3616,8 +3752,103 @@ async function joinFamily() {
   }
 }
 
-let logoutConfirmPending = false;
-let logoutConfirmTimer = null;
+// ══════════════════════════════════════════════
+// BABYSITTER LINK + FAMILY NOTES (parent side)
+// ══════════════════════════════════════════════
+
+async function generateSitterLink() {
+  const display = document.getElementById('sitter-link-display');
+  const valueEl = document.getElementById('sitter-link-value');
+  const status  = document.getElementById('sitter-status');
+
+  status.textContent = 'Generating link…';
+  status.style.color = 'var(--txt3)';
+
+  try {
+    const res = await fetch('/api/family/sitter-code', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      status.textContent = data.error?.message || 'Could not create a link.';
+      status.style.color = '#ff8080';
+      return;
+    }
+
+    const link = `${window.location.origin}/sitter/${data.code}`;
+    valueEl.textContent = link;
+    valueEl.dataset.link = link;
+    display.style.display = 'block';
+    status.textContent = '';
+    showToast('Sitter link ready — share it however you like');
+  } catch (err) {
+    status.textContent = "Couldn't reach the server. Try again.";
+    status.style.color = '#ff8080';
+  }
+}
+
+function copySitterLink() {
+  const valueEl = document.getElementById('sitter-link-value');
+  const link = valueEl.dataset.link || valueEl.textContent;
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(link).then(() => showToast('Link copied'));
+  } else {
+    // Fallback for older browsers
+    const temp = document.createElement('textarea');
+    temp.value = link;
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand('copy');
+    document.body.removeChild(temp);
+    showToast('Link copied');
+  }
+}
+
+async function postFamilyNote() {
+  const input  = document.getElementById('quick-note-input');
+  const text   = input.value.trim();
+  const status = document.getElementById('sitter-status');
+
+  if (!text) {
+    status.textContent = 'Type a note first.';
+    status.style.color = '#ff8080';
+    return;
+  }
+
+  status.textContent = 'Posting…';
+  status.style.color = 'var(--txt3)';
+
+  try {
+    const res = await fetch('/api/family/notes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      status.textContent = data.error?.message || 'Could not post the note.';
+      status.style.color = '#ff8080';
+      return;
+    }
+
+    input.value = '';
+    status.textContent = '✓ Posted — visible to your sitter and co-parent';
+    status.style.color = 'var(--sage)';
+    showToast('Note posted');
+  } catch (err) {
+    status.textContent = "Couldn't reach the server. Try again.";
+    status.style.color = '#ff8080';
+  }
+}
+
+
 
 function handleLogoutClick() {
   const btn = document.getElementById('logout-btn');
@@ -3684,6 +3915,14 @@ function quickAddChild() {
 // INIT
 // ══════════════════════════════════════════════
 window.addEventListener('load', async () => {
+  // Sitter link check first — if this URL is a sitter view, show that
+  // and skip the entire normal login/app flow.
+  const sitterMatch = window.location.pathname.match(/\/sitter\/([A-Za-z0-9]+)/);
+  if (sitterMatch) {
+    await loadSitterView(sitterMatch[1]);
+    return;
+  }
+
   // Pre-load browser voices as fallback (do this regardless of login state)
   if (window.speechSynthesis) {
     window.speechSynthesis.getVoices();
@@ -3718,6 +3957,123 @@ window.addEventListener('load', async () => {
     localStorage.removeItem('rosie_session');
   }
 });
+
+// ══════════════════════════════════════════════
+// SITTER VIEW — public, no login required
+// ══════════════════════════════════════════════
+async function loadSitterView(code) {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('sitter-view').classList.add('active');
+
+  const loadingEl = document.getElementById('sitter-loading');
+  const errorEl   = document.getElementById('sitter-error');
+  const contentEl = document.getElementById('sitter-content');
+
+  try {
+    const res = await fetch(`/api/sitter/${encodeURIComponent(code)}`);
+    const data = await res.json();
+
+    loadingEl.style.display = 'none';
+
+    if (!res.ok) {
+      errorEl.style.display = 'block';
+      errorEl.textContent = data.error?.message || 'This link is invalid or has expired.';
+      return;
+    }
+
+    contentEl.style.display = 'block';
+    contentEl.innerHTML = renderSitterContent(data);
+  } catch (err) {
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'block';
+    errorEl.textContent = "Couldn't load this link. Check your connection and try again.";
+  }
+}
+
+function renderSitterContent(data) {
+  let html = '';
+
+  // Family notes ("running late" etc) — most urgent, shown first
+  if (data.familyNotes?.length > 0) {
+    html += `<div class="sitter-alert-banner">
+      <div class="sitter-alert-banner-title">📌 Notes from the parents</div>
+      ${data.familyNotes.map(n => `
+        <div class="sitter-note-item">
+          ${escapeHtml(n.text)}
+          <div class="sitter-note-meta">— ${escapeHtml(n.author)} · ${new Date(n.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
+        </div>`).join('')}
+    </div>`;
+  }
+
+  // Allergies — safety-critical, always near the top
+  if (data.allergies?.length > 0) {
+    html += `<div class="sitter-alert-banner">
+      <div class="sitter-alert-banner-title">⚠️ Allergies</div>
+      <div style="color:var(--txt);font-size:14px;">${data.allergies.map(escapeHtml).join(', ')}</div>
+    </div>`;
+  }
+
+  // Kids
+  if (data.children?.length > 0) {
+    html += `<div class="sitter-section-title">Kids</div>`;
+    html += data.children.map(c => `
+      <div class="sitter-row">
+        <div class="sitter-row-label">${escapeHtml(c.name)}</div>
+        <div class="sitter-row-sub">Age ${c.age || '—'}</div>
+      </div>`).join('');
+  }
+
+  // Today's schedule
+  html += `<div class="sitter-section-title">Today's Schedule</div>`;
+  if (data.todayEvents?.length > 0) {
+    html += data.todayEvents.map(e => `
+      <div class="sitter-row">
+        <div class="sitter-row-label">${escapeHtml(e.title)}</div>
+        <div class="sitter-row-sub">${escapeHtml(e.childName || 'Family')}${e.time ? ' · ' + fmtTime(e.time) : ''}${e.location ? ' · ' + escapeHtml(e.location) : ''}</div>
+      </div>`).join('');
+  } else {
+    html += `<div style="color:var(--txt3);font-size:13px;font-style:italic;">Nothing on the schedule today.</div>`;
+  }
+
+  // Medications
+  if (data.activeMeds?.length > 0) {
+    html += `<div class="sitter-section-title">Medications</div>`;
+    html += data.activeMeds.map(m => `
+      <div class="sitter-row">
+        <div class="sitter-row-label">${escapeHtml(m.name)} — ${escapeHtml(m.childName)}</div>
+        <div class="sitter-row-sub">${escapeHtml(m.dose || '')} · ${escapeHtml(m.schedule || '')}</div>
+      </div>`).join('');
+  }
+
+  // Emergency info
+  const info = data.emergencyInfo || {};
+  html += `<div class="sitter-section-title">Emergency Info</div>`;
+
+  if (info.pediatrician?.name) {
+    html += `<div class="sitter-row"><div class="sitter-row-label">Pediatrician</div>
+      <div class="sitter-row-sub">${escapeHtml(info.pediatrician.name)}${info.pediatrician.phone ? ' · ' + escapeHtml(info.pediatrician.phone) : ''}</div></div>`;
+  }
+  if (info.iceContacts?.length > 0) {
+    info.iceContacts.forEach(c => {
+      html += `<div class="sitter-row"><div class="sitter-row-label">${escapeHtml(c.name)} (${escapeHtml(c.relationship || 'Contact')})</div>
+        <div class="sitter-row-sub">${escapeHtml(c.phone)}</div></div>`;
+    });
+  }
+  if (info.homeAddress) {
+    html += `<div class="sitter-row"><div class="sitter-row-label">Address</div>
+      <div class="sitter-row-sub">${escapeHtml(info.homeAddress)}</div></div>`;
+  }
+  if (info.generalNotes) {
+    html += `<div class="sitter-row"><div class="sitter-row-label">Notes</div>
+      <div class="sitter-row-sub">${escapeHtml(info.generalNotes)}</div></div>`;
+  }
+
+  if (!info.pediatrician?.name && !info.iceContacts?.length && !info.homeAddress && !info.generalNotes) {
+    html += `<div style="color:var(--txt3);font-size:13px;font-style:italic;">No emergency info added yet.</div>`;
+  }
+
+  return html;
+}
 </script>
 </body>
 </html>

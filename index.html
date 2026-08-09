@@ -1830,6 +1830,46 @@
     <h3>Dietary Profile</h3>
     <div id="panel-diet"><div class="empty-panel">Tell Rosie about your family's diet.</div></div>
   </div>
+
+  <div class="panel-section">
+    <h3>🚨 Emergency Info</h3>
+    <div id="panel-emergency-display"></div>
+    <button onclick="toggleEmergencyEdit()" id="emergency-edit-toggle" style="
+      width:100%; padding:9px; margin-top:8px; border-radius:var(--radius-xs);
+      border:1px solid var(--border); background:var(--bg3);
+      color:var(--txt2); font-family:'DM Sans',sans-serif;
+      font-size:12.5px; cursor:pointer;
+    ">Edit Emergency Info</button>
+
+    <div id="emergency-edit-form" style="display:none; margin-top:10px;">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:10px 0 6px;">Pediatrician</div>
+      <input class="input-field" type="text" id="em-ped-name" placeholder="Name" style="margin-bottom:6px;">
+      <input class="input-field" type="tel" id="em-ped-phone" placeholder="Phone" style="margin-bottom:6px;">
+
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 6px;">Dentist</div>
+      <input class="input-field" type="text" id="em-dent-name" placeholder="Name" style="margin-bottom:6px;">
+      <input class="input-field" type="tel" id="em-dent-phone" placeholder="Phone" style="margin-bottom:6px;">
+
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 6px;">Insurance</div>
+      <input class="input-field" type="text" id="em-ins-provider" placeholder="Provider" style="margin-bottom:6px;">
+      <input class="input-field" type="text" id="em-ins-policy" placeholder="Policy number" style="margin-bottom:6px;">
+      <input class="input-field" type="tel" id="em-ins-phone" placeholder="Phone" style="margin-bottom:6px;">
+
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 6px;">In Case of Emergency Contact</div>
+      <input class="input-field" type="text" id="em-ice-name" placeholder="Name" style="margin-bottom:6px;">
+      <input class="input-field" type="text" id="em-ice-relationship" placeholder="Relationship (e.g. Grandma)" style="margin-bottom:6px;">
+      <input class="input-field" type="tel" id="em-ice-phone" placeholder="Phone" style="margin-bottom:6px;">
+
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 6px;">Home Address</div>
+      <input class="input-field" type="text" id="em-address" placeholder="123 Main St" style="margin-bottom:6px;">
+
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 6px;">Notes for a Sitter</div>
+      <textarea class="input-field" id="em-notes" placeholder="Gate code, allergies, bedtime routine, anything a sitter should know..." style="margin-bottom:10px; min-height:70px; resize:vertical;"></textarea>
+
+      <button class="btn-primary" onclick="saveEmergencyInfo()">Save Emergency Info</button>
+      <div id="emergency-save-status" style="text-align:center;font-size:12.5px;margin-top:8px;min-height:16px;color:var(--sage);"></div>
+    </div>
+  </div>
 </div>
 
 <!-- Toast -->
@@ -1967,7 +2007,15 @@ function defaultProfile() {
     meals: [],
     conversation: [],
     elevenLabsKey: null,
-    hasSeenIntro: false
+    hasSeenIntro: false,
+    emergencyInfo: {
+      pediatrician: { name: '', phone: '', notes: '' },
+      dentist: { name: '', phone: '' },
+      insurance: { provider: '', policyNumber: '', phone: '' },
+      iceContacts: [],
+      homeAddress: '',
+      generalNotes: ''
+    }
   };
 }
 
@@ -2023,6 +2071,8 @@ const DB = {
   getElevenLabsKey: () => profileCache?.elevenLabsKey || null,
   getHasSeenIntro: () => profileCache?.hasSeenIntro === true,
   setHasSeenIntro: () => { profileCache.hasSeenIntro = true; DB.saveToServer(); },
+  getEmergencyInfo: () => profileCache?.emergencyInfo || defaultProfile().emergencyInfo,
+  setEmergencyInfo: (info) => { profileCache.emergencyInfo = info; DB.saveToServer(); },
 };
 
 // ══════════════════════════════════════════════
@@ -2486,6 +2536,7 @@ ACTION TYPES:
 - { "type": "DELETE_GROCERY", "itemText": "string" }
 - { "type": "CLEAR_GROCERY_CHECKED" }
 - { "type": "LOG_MEAL", "data": { "name": "string" } }
+- { "type": "UPDATE_EMERGENCY_INFO", "data": { "pediatrician": {"name","phone"}, "dentist": {"name","phone"}, "insurance": {"provider","policyNumber","phone"}, "iceContacts": [{"name","relationship","phone"}], "homeAddress": "string", "generalNotes": "string" } }
 
 EXTRACTION RULES:
 When a parent mentions anything, extract and action it:
@@ -2496,6 +2547,7 @@ EVENTS: any date + activity → ADD_EVENT (infer date from context; today is ${t
 MEDS: "Jake takes Flonase 50mcg every morning" → ADD_MED (ALWAYS confirm dose/schedule by repeating back in speech before saving)
 GROCERY: "we need milk and eggs" → ADD_GROCERY
 MEALS: "we had tacos last night" → LOG_MEAL
+EMERGENCY INFO: "our pediatrician is Dr. Smith, 555-1234" / "Grandma is our emergency contact" → UPDATE_EMERGENCY_INFO
 
 EDIT TRIGGERS: "actually", "change", "update", "wrong", "I meant", "reschedule", "move"
 DELETE TRIGGERS: "cancel", "remove", "delete", "take off", "never mind", "doesn't take it anymore"
@@ -2561,6 +2613,20 @@ function executeAction(action) {
       family.diet = { ...family.diet, ...action.data };
       DB.setFamily(family);
       break;
+
+    case 'UPDATE_EMERGENCY_INFO': {
+      const current = DB.getEmergencyInfo();
+      const updated = {
+        ...current,
+        ...action.data,
+        pediatrician: { ...current.pediatrician, ...(action.data.pediatrician || {}) },
+        dentist: { ...current.dentist, ...(action.data.dentist || {}) },
+        insurance: { ...current.insurance, ...(action.data.insurance || {}) },
+        iceContacts: action.data.iceContacts || current.iceContacts
+      };
+      DB.setEmergencyInfo(updated);
+      break;
+    }
 
     case 'ADD_EVENT': {
       const ev = { ...action.data, id: uid(), createdAt: new Date().toISOString() };
@@ -2985,7 +3051,130 @@ function updatePanel() {
   } else {
     dietEl.innerHTML = '<div class="empty-panel">Tell Rosie about your family\'s diet.</div>';
   }
+
+  // Emergency info
+  renderEmergencyDisplay();
 }
+
+function renderEmergencyDisplay() {
+  const info = DB.getEmergencyInfo();
+  const el = document.getElementById('panel-emergency-display');
+  if (!el) return;
+
+  const hasAny = info.pediatrician?.name || info.dentist?.name || info.insurance?.provider ||
+                 info.iceContacts?.length > 0 || info.homeAddress || info.generalNotes;
+
+  if (!hasAny) {
+    el.innerHTML = '<div class="empty-panel">Add pediatrician, ICE contact, and sitter notes.</div>';
+    return;
+  }
+
+  let html = '';
+  if (info.pediatrician?.name) {
+    html += `<div class="panel-item"><div class="panel-item-left">
+      <div class="panel-item-label">Pediatrician</div>
+      <div class="panel-item-sub">${escapeHtml(info.pediatrician.name)}${info.pediatrician.phone ? ' · ' + escapeHtml(info.pediatrician.phone) : ''}</div>
+    </div></div>`;
+  }
+  if (info.dentist?.name) {
+    html += `<div class="panel-item"><div class="panel-item-left">
+      <div class="panel-item-label">Dentist</div>
+      <div class="panel-item-sub">${escapeHtml(info.dentist.name)}${info.dentist.phone ? ' · ' + escapeHtml(info.dentist.phone) : ''}</div>
+    </div></div>`;
+  }
+  if (info.iceContacts?.length > 0) {
+    info.iceContacts.forEach(c => {
+      html += `<div class="panel-item"><div class="panel-item-left">
+        <div class="panel-item-label">${escapeHtml(c.name)} (${escapeHtml(c.relationship || 'ICE')})</div>
+        <div class="panel-item-sub">${escapeHtml(c.phone)}</div>
+      </div></div>`;
+    });
+  }
+  if (info.homeAddress) {
+    html += `<div class="panel-item"><div class="panel-item-left">
+      <div class="panel-item-label">Home Address</div>
+      <div class="panel-item-sub">${escapeHtml(info.homeAddress)}</div>
+    </div></div>`;
+  }
+  if (info.generalNotes) {
+    html += `<div class="panel-item"><div class="panel-item-left">
+      <div class="panel-item-label">Sitter Notes</div>
+      <div class="panel-item-sub">${escapeHtml(info.generalNotes)}</div>
+    </div></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function toggleEmergencyEdit() {
+  const form = document.getElementById('emergency-edit-form');
+  const isOpen = form.style.display === 'block';
+
+  if (!isOpen) {
+    // Populate form fields with current values before showing
+    const info = DB.getEmergencyInfo();
+    document.getElementById('em-ped-name').value    = info.pediatrician?.name || '';
+    document.getElementById('em-ped-phone').value   = info.pediatrician?.phone || '';
+    document.getElementById('em-dent-name').value   = info.dentist?.name || '';
+    document.getElementById('em-dent-phone').value  = info.dentist?.phone || '';
+    document.getElementById('em-ins-provider').value = info.insurance?.provider || '';
+    document.getElementById('em-ins-policy').value  = info.insurance?.policyNumber || '';
+    document.getElementById('em-ins-phone').value   = info.insurance?.phone || '';
+    document.getElementById('em-address').value     = info.homeAddress || '';
+    document.getElementById('em-notes').value       = info.generalNotes || '';
+
+    const firstIce = info.iceContacts?.[0] || {};
+    document.getElementById('em-ice-name').value = firstIce.name || '';
+    document.getElementById('em-ice-relationship').value = firstIce.relationship || '';
+    document.getElementById('em-ice-phone').value = firstIce.phone || '';
+  }
+
+  form.style.display = isOpen ? 'none' : 'block';
+  document.getElementById('emergency-edit-toggle').textContent = isOpen ? 'Edit Emergency Info' : 'Cancel';
+}
+
+function saveEmergencyInfo() {
+  const iceName = document.getElementById('em-ice-name').value.trim();
+
+  const info = {
+    pediatrician: {
+      name: document.getElementById('em-ped-name').value.trim(),
+      phone: document.getElementById('em-ped-phone').value.trim(),
+      notes: ''
+    },
+    dentist: {
+      name: document.getElementById('em-dent-name').value.trim(),
+      phone: document.getElementById('em-dent-phone').value.trim()
+    },
+    insurance: {
+      provider: document.getElementById('em-ins-provider').value.trim(),
+      policyNumber: document.getElementById('em-ins-policy').value.trim(),
+      phone: document.getElementById('em-ins-phone').value.trim()
+    },
+    iceContacts: iceName ? [{
+      name: iceName,
+      relationship: document.getElementById('em-ice-relationship').value.trim(),
+      phone: document.getElementById('em-ice-phone').value.trim()
+    }] : [],
+    homeAddress: document.getElementById('em-address').value.trim(),
+    generalNotes: document.getElementById('em-notes').value.trim()
+  };
+
+  DB.setEmergencyInfo(info);
+  renderEmergencyDisplay();
+
+  const status = document.getElementById('emergency-save-status');
+  status.textContent = '✓ Saved — synced to all devices';
+  status.style.color = 'var(--sage)';
+  showToast('Emergency info saved');
+
+  setTimeout(() => {
+    toggleEmergencyEdit();
+    status.textContent = '';
+  }, 1200);
+}
+
+
 
 // ══════════════════════════════════════════════
 // DASHBOARD — Ruthie-replica: clock, radar, gauges, panels

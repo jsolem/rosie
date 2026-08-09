@@ -137,6 +137,24 @@
     animation: speak-orb 0.75s ease-in-out infinite;
   }
 
+  .mini-orb.listening {
+    animation: mini-orb-listening 0.9s ease-in-out infinite !important;
+  }
+
+  .mini-orb.speaking {
+    animation: mini-orb-speaking 0.7s ease-in-out infinite !important;
+  }
+
+  @keyframes mini-orb-listening {
+    0%, 100% { box-shadow: 0 0 16px var(--rose-glow), 0 0 0 0 rgba(232,116,138,0.4); transform: scale(1); background: radial-gradient(circle at 32% 32%, #f0909a, #a02848); }
+    50%       { box-shadow: 0 0 26px var(--rose-glow), 0 0 0 10px rgba(232,116,138,0); transform: scale(1.08); background: radial-gradient(circle at 32% 32%, #f0909a, #a02848); }
+  }
+
+  @keyframes mini-orb-speaking {
+    0%, 100% { box-shadow: 0 0 16px rgba(110,207,151,0.5); transform: scale(1); background: radial-gradient(circle at 32% 32%, #7ee0a8, #2a8e5e); }
+    50%       { box-shadow: 0 0 26px rgba(110,207,151,0.7); transform: scale(1.1); background: radial-gradient(circle at 32% 32%, #7ee0a8, #2a8e5e); }
+  }
+
   @keyframes pulse-orb {
     0%, 100% { box-shadow: 0 0 16px var(--rose-glow), 0 0 32px rgba(232,116,138,0.12); transform: scale(1); }
     50%       { box-shadow: 0 0 28px var(--rose-glow), 0 0 56px rgba(232,116,138,0.22); transform: scale(1.1); }
@@ -1153,8 +1171,8 @@
   }
 
   .dock-side-btn {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     border: none;
     background: none;
@@ -1162,17 +1180,33 @@
     cursor: pointer;
     flex-shrink: 0;
     -webkit-tap-highlight-color: transparent;
+    position: relative;
   }
 
   .mini-orb {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     background: radial-gradient(circle at 32% 32%, #f0c060, #a06a1a);
-    box-shadow: 0 0 14px rgba(240,192,96,0.4);
+    box-shadow: 0 0 14px rgba(240,192,96,0.5), 0 0 0 0 rgba(240,192,96,0.4);
     transition: transform 0.18s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: mini-orb-pulse 2.6s ease-in-out infinite;
   }
   .dock-side-btn:active .mini-orb { transform: scale(0.9); }
+
+  @keyframes mini-orb-pulse {
+    0%, 100% { box-shadow: 0 0 14px rgba(240,192,96,0.5), 0 0 0 0 rgba(240,192,96,0.35); }
+    50%       { box-shadow: 0 0 18px rgba(240,192,96,0.65), 0 0 0 8px rgba(240,192,96,0); }
+  }
+
+  .mini-orb-icon {
+    width: 19px;
+    height: 19px;
+    color: rgba(30, 18, 4, 0.85);
+  }
 
   .dock-camera-btn {
     width: 38px;
@@ -2002,7 +2036,13 @@
 
     <div id="dock-command-row">
       <button class="dock-side-btn" onclick="openVoiceMode()" title="Voice mode">
-        <div class="mini-orb" id="logo-orb"></div>
+        <div class="mini-orb" id="logo-orb">
+          <svg class="mini-orb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
       </button>
       <button class="dock-camera-btn" onclick="triggerPhotoUpload()" title="Scan a flyer or invitation">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

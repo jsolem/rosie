@@ -104,6 +104,55 @@ function generateInviteCode() {
   return code;
 }
 
+// One-time repair for accounts created before the family-sharing rewrite.
+// Old accounts stored their data directly on user.profile instead of a
+// shared family record. This runs on every login/signup as a cheap safety
+// check — if an account has no familyId, or its familyId points at a
+// family record that no longer exists, we create a proper family record
+// for them and carry over whatever data they had under the old
+// user.profile field, so nothing is lost.
+function ensureUserHasFamily(email, users, families) {
+  const user = users[email];
+  if (!user) return { users, families };
+
+  const familyMissing = !user.familyId || !families[user.familyId];
+
+  if (familyMissing) {
+    const newFamilyId = generateFamilyId();
+    const legacyProfile = user.profile || {};
+
+    families[newFamilyId] = {
+      ...defaultFamilyData(),
+      family: legacyProfile.family || defaultFamilyData().family,
+      events: legacyProfile.events || [],
+      meds: legacyProfile.meds || [],
+      grocery: legacyProfile.grocery || [],
+      meals: legacyProfile.meals || [],
+      conversation: legacyProfile.conversation || [],
+      hasSeenIntro: legacyProfile.hasSeenIntro || false,
+      emergencyInfo: legacyProfile.emergencyInfo || defaultFamilyData().emergencyInfo,
+      familyNotes: legacyProfile.familyNotes || [],
+      chores: legacyProfile.chores || [],
+      allowanceBalances: legacyProfile.allowanceBalances || {},
+      members: [email]
+    };
+
+    user.familyId = newFamilyId;
+
+    // Carry over the ElevenLabs key to its new per-user location if it
+    // was previously nested under the old profile object.
+    if (!user.elevenLabsKey && legacyProfile.elevenLabsKey) {
+      user.elevenLabsKey = legacyProfile.elevenLabsKey;
+    }
+
+    // Leave user.profile in place untouched as a backup rather than
+    // deleting it — costs nothing to keep and means this migration
+    // can never destroy data even if something above has a bug.
+  }
+
+  return { users, families };
+}
+
 // ══════════════════════════════════════════════
 // AUTH — simple bearer token, tokens stored in memory
 // ══════════════════════════════════════════════
@@ -196,6 +245,15 @@ app.post('/api/auth/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) {
       return res.status(401).json({ error: { message: 'Incorrect email or password.' } });
+    }
+
+    // Repair legacy accounts that predate family-sharing, if needed
+    const families = readFamilies();
+    const familyMissing = !user.familyId || !families[user.familyId];
+    if (familyMissing) {
+      ensureUserHasFamily(normalizedEmail, users, families);
+      writeUsers(users);
+      writeFamilies(families);
     }
 
     const token = generateToken();

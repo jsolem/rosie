@@ -1867,69 +1867,154 @@
 
 <script>
 // ══════════════════════════════════════════════
-// STORAGE — localStorage keyed by user
+// STORAGE — server-synced, cached in memory for instant reads.
+// Every DB.get* / DB.set* call below behaves exactly as before from
+// the caller's point of view — nothing downstream needs to change.
 // ══════════════════════════════════════════════
+let authToken = null;
+let profileCache = null;
+let saveDebounceTimer = null;
+
+function defaultProfile() {
+  return {
+    family: { name: '', children: [], diet: { type: 'omnivore', allergies: [], dislikes: [], cuisines: [], timeLimit: 30 }, contacts: [] },
+    events: [],
+    meds: [],
+    grocery: [],
+    meals: [],
+    conversation: [],
+    elevenLabsKey: null
+  };
+}
+
 const DB = {
-  key: (k) => `rosie_${currentUser?.email || 'guest'}_${k}`,
-  get: (k) => { try { return JSON.parse(localStorage.getItem(DB.key(k))); } catch { return null; } },
-  set: (k, v) => localStorage.setItem(DB.key(k), JSON.stringify(v)),
-  getFamily: () => DB.get('family') || { name: '', children: [], diet: {type:'omnivore', allergies:[], dislikes:[], cuisines:[], timeLimit:30}, contacts: [] },
-  setFamily: (f) => DB.set('family', f),
-  getEvents: () => DB.get('events') || [],
-  setEvents: (e) => DB.set('events', e),
-  getMeds: () => DB.get('meds') || [],
-  setMeds: (m) => DB.set('meds', m),
-  getGrocery: () => DB.get('grocery') || [],
-  setGrocery: (g) => DB.set('grocery', g),
-  getMealLog: () => DB.get('meals') || [],
-  setMealLog: (m) => DB.set('meals', m),
-  getConversation: () => DB.get('conversation') || [],
-  setConversation: (c) => DB.set('conversation', c),
-  getUsers: () => { try { return JSON.parse(localStorage.getItem('rosie_users')) || {}; } catch { return {}; } },
-  setUsers: (u) => localStorage.setItem('rosie_users', JSON.stringify(u)),
+  // Pull the full profile from the server once (called right after login/signup)
+  async loadFromServer() {
+    try {
+      const res = await fetch('/api/profile', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (!res.ok) throw new Error('Failed to load profile');
+      profileCache = await res.json();
+    } catch (err) {
+      console.error('Failed to load profile from server:', err);
+      profileCache = defaultProfile();
+    }
+  },
+
+  // Push the current cache to the server. Debounced so rapid-fire
+  // updates (e.g. several actions in one Claude response) collapse
+  // into a single network call instead of many.
+  saveToServer() {
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = setTimeout(async () => {
+      if (!authToken || !profileCache) return;
+      try {
+        await fetch('/api/profile', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(profileCache)
+        });
+      } catch (err) {
+        console.error('Failed to save profile to server:', err);
+      }
+    }, 400);
+  },
+
+  getFamily: () => profileCache?.family || defaultProfile().family,
+  setFamily: (f) => { profileCache.family = f; DB.saveToServer(); },
+  getEvents: () => profileCache?.events || [],
+  setEvents: (e) => { profileCache.events = e; DB.saveToServer(); },
+  getMeds: () => profileCache?.meds || [],
+  setMeds: (m) => { profileCache.meds = m; DB.saveToServer(); },
+  getGrocery: () => profileCache?.grocery || [],
+  setGrocery: (g) => { profileCache.grocery = g; DB.saveToServer(); },
+  getMealLog: () => profileCache?.meals || [],
+  setMealLog: (m) => { profileCache.meals = m; DB.saveToServer(); },
+  getConversation: () => profileCache?.conversation || [],
+  setConversation: (c) => { profileCache.conversation = c; DB.saveToServer(); },
+  getElevenLabsKey: () => profileCache?.elevenLabsKey || null,
 };
 
 // ══════════════════════════════════════════════
-// AUTH
+// AUTH — real accounts on the server, synced across every device
 // ══════════════════════════════════════════════
 let currentUser = null;
 
-function handleLogin() {
+async function handleLogin() {
   const email = document.getElementById('login-email').value.trim().toLowerCase();
   const pass  = document.getElementById('login-pass').value;
   const err   = document.getElementById('login-error');
   if (!email || !pass) { err.textContent = 'Please fill in all fields.'; return; }
-  const users = DB.getUsers();
-  if (!users[email] || users[email].password !== btoa(pass)) {
-    err.textContent = 'Incorrect email or password.'; return;
+
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+    const data = await res.json();
+
+    if (!res.ok) { err.textContent = data.error?.message || 'Incorrect email or password.'; return; }
+
+    authToken   = data.token;
+    currentUser = { email: data.email, name: data.name };
+    localStorage.setItem('rosie_session', JSON.stringify({ token: authToken, email: data.email, name: data.name }));
+
+    await DB.loadFromServer();
+    launchApp();
+  } catch (err2) {
+    err.textContent = "Couldn't reach the server. Check your connection and try again.";
   }
-  currentUser = { email, name: users[email].name };
-  localStorage.setItem('rosie_session', JSON.stringify(currentUser));
-  launchApp();
 }
 
-function handleSignup() {
+async function handleSignup() {
   const name  = document.getElementById('su-name').value.trim();
   const email = document.getElementById('su-email').value.trim().toLowerCase();
   const pass  = document.getElementById('su-pass').value;
   const sq    = document.getElementById('su-sq').value;
-  const sa    = document.getElementById('su-sa').value.trim().toLowerCase();
+  const sa    = document.getElementById('su-sa').value.trim();
   const err   = document.getElementById('signup-error');
   if (!name || !email || !pass) { err.textContent = 'Please fill in all fields.'; return; }
   if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
   if (!sq) { err.textContent = 'Please choose a security question.'; return; }
   if (!sa) { err.textContent = 'Please answer your security question.'; return; }
-  const users = DB.getUsers();
-  if (users[email]) { err.textContent = 'An account with that email already exists.'; return; }
-  users[email] = { name, password: btoa(pass), securityQuestion: sq, securityAnswer: btoa(sa) };
-  DB.setUsers(users);
-  currentUser = { email, name };
-  localStorage.setItem('rosie_session', JSON.stringify(currentUser));
-  launchApp();
+
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password: pass, securityQuestion: sq, securityAnswer: sa })
+    });
+    const data = await res.json();
+
+    if (!res.ok) { err.textContent = data.error?.message || 'Could not create your account.'; return; }
+
+    authToken   = data.token;
+    currentUser = { email: data.email, name: data.name };
+    localStorage.setItem('rosie_session', JSON.stringify({ token: authToken, email: data.email, name: data.name }));
+
+    await DB.loadFromServer();
+    launchApp();
+  } catch (err2) {
+    err.textContent = "Couldn't reach the server. Check your connection and try again.";
+  }
 }
 
 function handleLogout() {
-  currentUser = null;
+  fetch('/api/auth/logout', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${authToken}` }
+  }).catch(() => {}); // best-effort, don't block logout on this
+
+  currentUser  = null;
+  authToken    = null;
+  profileCache = null;
   localStorage.removeItem('rosie_session');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('chat-messages').innerHTML = '';
@@ -1962,7 +2047,7 @@ function switchToReset() {
   document.getElementById('reset-email').value = '';
 }
 
-// ── Reset flow ──
+// ── Reset flow — now verified against the server ──
 const SECURITY_QUESTIONS = {
   pet:      "What was the name of your first pet?",
   street:   "What street did you grow up on?",
@@ -1973,56 +2058,91 @@ const SECURITY_QUESTIONS = {
 };
 
 let resetEmail = '';
+let resetToken = '';
 
-function handleResetStep1() {
+async function handleResetStep1() {
   const email = document.getElementById('reset-email').value.trim().toLowerCase();
   const err   = document.getElementById('reset-error-1');
   if (!email) { err.textContent = 'Please enter your email address.'; return; }
-  const users = DB.getUsers();
-  if (!users[email]) { err.textContent = 'No account found with that email.'; return; }
-  if (!users[email].securityQuestion) {
-    err.textContent = 'This account has no security question set. Contact support.'; return;
+
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/auth/reset/lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+
+    if (!res.ok) { err.textContent = data.error?.message || 'No account found with that email.'; return; }
+
+    resetEmail = email;
+    document.getElementById('reset-question-label').textContent = SECURITY_QUESTIONS[data.securityQuestion] || data.securityQuestion;
+    document.getElementById('reset-answer').value = '';
+    document.getElementById('reset-error-2').textContent = '';
+    hideAllForms();
+    document.getElementById('reset-form-2').style.display = 'flex';
+  } catch (err2) {
+    err.textContent = "Couldn't reach the server. Try again.";
   }
-  resetEmail = email;
-  const qKey = users[email].securityQuestion;
-  document.getElementById('reset-question-label').textContent = SECURITY_QUESTIONS[qKey] || qKey;
-  document.getElementById('reset-answer').value = '';
-  document.getElementById('reset-error-2').textContent = '';
-  hideAllForms();
-  document.getElementById('reset-form-2').style.display = 'flex';
 }
 
-function handleResetStep2() {
-  const answer = document.getElementById('reset-answer').value.trim().toLowerCase();
+async function handleResetStep2() {
+  const answer = document.getElementById('reset-answer').value.trim();
   const err    = document.getElementById('reset-error-2');
   if (!answer) { err.textContent = 'Please enter your answer.'; return; }
-  const users  = DB.getUsers();
-  const stored = users[resetEmail]?.securityAnswer;
-  if (!stored || btoa(answer) !== stored) {
-    err.textContent = 'That answer doesn\'t match. Try again.'; return;
+
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/auth/reset/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: resetEmail, answer })
+    });
+    const data = await res.json();
+
+    if (!res.ok) { err.textContent = data.error?.message || "That answer doesn't match. Try again."; return; }
+
+    resetToken = data.resetToken;
+    document.getElementById('reset-newpass').value  = '';
+    document.getElementById('reset-newpass2').value = '';
+    document.getElementById('reset-error-3').textContent = '';
+    hideAllForms();
+    document.getElementById('reset-form-3').style.display = 'flex';
+  } catch (err2) {
+    err.textContent = "Couldn't reach the server. Try again.";
   }
-  document.getElementById('reset-newpass').value  = '';
-  document.getElementById('reset-newpass2').value = '';
-  document.getElementById('reset-error-3').textContent = '';
-  hideAllForms();
-  document.getElementById('reset-form-3').style.display = 'flex';
 }
 
-function handleResetStep3() {
+async function handleResetStep3() {
   const pass1 = document.getElementById('reset-newpass').value;
   const pass2 = document.getElementById('reset-newpass2').value;
   const err   = document.getElementById('reset-error-3');
   if (!pass1 || !pass2) { err.textContent = 'Please fill in both fields.'; return; }
   if (pass1.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
-  if (pass1 !== pass2)  { err.textContent = 'Passwords don\'t match.'; return; }
-  const users = DB.getUsers();
-  users[resetEmail].password = btoa(pass1);
-  DB.setUsers(users);
-  // Auto sign in
-  currentUser = { email: resetEmail, name: users[resetEmail].name };
-  localStorage.setItem('rosie_session', JSON.stringify(currentUser));
-  showToast('✓ Password reset — you\'re signed in!');
-  launchApp();
+  if (pass1 !== pass2)  { err.textContent = "Passwords don't match."; return; }
+
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/auth/reset/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resetToken, newPassword: pass1 })
+    });
+    const data = await res.json();
+
+    if (!res.ok) { err.textContent = data.error?.message || 'Reset failed. Try again.'; return; }
+
+    authToken   = data.token;
+    currentUser = { email: data.email, name: data.name };
+    localStorage.setItem('rosie_session', JSON.stringify({ token: authToken, email: data.email, name: data.name }));
+
+    showToast('✓ Password reset — you\'re signed in!');
+    await DB.loadFromServer();
+    launchApp();
+  } catch (err2) {
+    err.textContent = "Couldn't reach the server. Try again.";
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -2597,7 +2717,7 @@ async function speakText(text) {
     .trim();
   if (!clean) return;
 
-  const elKey = localStorage.getItem('rosie_el_key');
+  const elKey = DB.getElevenLabsKey();
 
   if (elKey) {
     await speakElevenLabs(clean, elKey);
@@ -3010,11 +3130,11 @@ function wasMedGivenToday(medId) {
 // SETTINGS
 // ══════════════════════════════════════════════
 function openSettings() {
-  const existing = localStorage.getItem('rosie_el_key');
+  const existing = DB.getElevenLabsKey();
   const input    = document.getElementById('el-key-input');
   const status   = document.getElementById('settings-status');
   input.value    = existing ? '••••••••••••••••' : '';
-  status.textContent = existing ? '✓ ElevenLabs voice is active' : '';
+  status.textContent = existing ? '✓ ElevenLabs voice is active on all your devices' : '';
   status.style.color = 'var(--sage)';
   document.getElementById('settings-overlay').style.display = 'block';
   document.getElementById('settings-modal').style.display   = 'block';
@@ -3025,7 +3145,7 @@ function closeSettings() {
   document.getElementById('settings-modal').style.display   = 'none';
 }
 
-function saveELKey() {
+async function saveELKey() {
   const val    = document.getElementById('el-key-input').value.trim();
   const status = document.getElementById('settings-status');
   if (!val || val.startsWith('•')) {
@@ -3033,17 +3153,48 @@ function saveELKey() {
     status.style.color = '#ff8080';
     return;
   }
-  localStorage.setItem('rosie_el_key', val);
-  status.textContent = '✓ Saved! ElevenLabs voice is now active.';
-  status.style.color = 'var(--sage)';
-  showToast('🎙 ElevenLabs voice enabled');
-  setTimeout(closeSettings, 1200);
+
+  status.textContent = 'Saving…';
+  status.style.color = 'var(--txt3)';
+
+  try {
+    const res = await fetch('/api/profile/elevenlabs-key', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ key: val })
+    });
+    if (!res.ok) throw new Error('Save failed');
+
+    profileCache.elevenLabsKey = val;
+    status.textContent = '✓ Saved! ElevenLabs voice is now active on all your devices.';
+    status.style.color = 'var(--sage)';
+    showToast('🎙 ElevenLabs voice enabled');
+    setTimeout(closeSettings, 1200);
+  } catch (err) {
+    status.textContent = "Couldn't save — check your connection and try again.";
+    status.style.color = '#ff8080';
+  }
 }
 
-function clearELKey() {
-  localStorage.removeItem('rosie_el_key');
+async function clearELKey() {
+  try {
+    await fetch('/api/profile/elevenlabs-key', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ key: null })
+    });
+    profileCache.elevenLabsKey = null;
+  } catch (err) {
+    console.error('Failed to clear key on server:', err);
+  }
   document.getElementById('el-key-input').value = '';
-  document.getElementById('settings-status').textContent = 'Key removed — using browser voice.';
+  document.getElementById('settings-status').textContent = 'Key removed — using browser voice on all devices.';
   document.getElementById('settings-status').style.color = 'var(--txt3)';
   showToast('Switched to browser voice');
 }
@@ -3051,21 +3202,39 @@ function clearELKey() {
 // ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
-window.addEventListener('load', () => {
-  // Check existing session
-  try {
-    const session = JSON.parse(localStorage.getItem('rosie_session'));
-    if (session?.email) {
-      currentUser = session;
-      launchApp();
-      return;
-    }
-  } catch {}
-
-  // Pre-load browser voices as fallback
+window.addEventListener('load', async () => {
+  // Pre-load browser voices as fallback (do this regardless of login state)
   if (window.speechSynthesis) {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }
+
+  // Check existing session — restore token, then pull fresh data from the server
+  // so this device always shows what was last saved from ANY device.
+  try {
+    const session = JSON.parse(localStorage.getItem('rosie_session'));
+    if (session?.token && session?.email) {
+      authToken   = session.token;
+      currentUser = { email: session.email, name: session.name };
+
+      await DB.loadFromServer();
+
+      // If the token expired server-side (e.g. server restarted), profileCache
+      // load will still succeed with a default object but auth calls will start
+      // failing — bounce back to login in that case instead of showing empty data.
+      const check = await fetch('/api/profile', { headers: { 'Authorization': `Bearer ${authToken}` } });
+      if (!check.ok) {
+        localStorage.removeItem('rosie_session');
+        authToken = null;
+        currentUser = null;
+        return;
+      }
+
+      launchApp();
+    }
+  } catch (err) {
+    console.error('Session restore failed:', err);
+    localStorage.removeItem('rosie_session');
   }
 });
 </script>

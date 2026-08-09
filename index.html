@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#1a1a2e">
+<meta name="theme-color" content="#101214">
 <title>Rosie</title>
 <link rel="manifest" href="manifest.json">
 <style>
@@ -13,39 +13,39 @@
 
   /* ── DESIGN DNA: Ruthie's mission-control darkness, Rosie's warmth ── */
   :root {
-    /* Backgrounds — same near-black as Ruthie, warm purple undertone */
-    --bg:        #0c0c14;
-    --bg2:       #131320;
-    --bg3:       #1a1a2c;
-    --card:      #161626;
-    --border:    rgba(255,255,255,0.06);
-    --border-hi: rgba(255,255,255,0.12);
+    /* Backgrounds — neutral charcoal, no color cast */
+    --bg:        #101214;
+    --bg2:       #16191c;
+    --bg3:       #1e2226;
+    --card:      #191d20;
+    --border:    rgba(255,255,255,0.08);
+    --border-hi: rgba(255,255,255,0.15);
 
-    /* Primary — rose/blush replaces Ruthie's green as the "alive" color */
-    --rose:      #e8748a;
-    --rose-dim:  rgba(232,116,138,0.13);
-    --rose-glow: rgba(232,116,138,0.35);
+    /* Primary — muted slate blue, calm and legible, replaces rose */
+    --rose:      #7b9cc4;
+    --rose-dim:  rgba(123,156,196,0.14);
+    --rose-glow: rgba(123,156,196,0.30);
 
-    /* Confirmed/good — same role as Ruthie's --green */
-    --green:     #6ecf97;
-    --green-dim: rgba(110,207,151,0.12);
+    /* Confirmed/good — soft sage green */
+    --green:     #7fb894;
+    --green-dim: rgba(127,184,148,0.14);
 
-    /* Warning — same amber as Ruthie */
-    --amber:     #f0c060;
-    --amber-dim: rgba(240,192,96,0.12);
+    /* Data/highlight — warm neutral gray-gold, much less saturated than amber */
+    --amber:     #c9a876;
+    --amber-dim: rgba(201,168,118,0.14);
 
-    /* Alert */
-    --red:       #e06060;
-    --red-dim:   rgba(224,96,96,0.12);
+    /* Alert — soft coral, clearly a warning without being harsh */
+    --red:       #d17a72;
+    --red-dim:   rgba(209,122,114,0.14);
 
-    /* Lavender accent for meals/recipes */
-    --lavender:  #a07ed4;
-    --lav-dim:   rgba(160,126,212,0.12);
+    /* Secondary accent — dusty lavender-gray for meals/recipes */
+    --lavender:  #9b93b0;
+    --lav-dim:   rgba(155,147,176,0.14);
 
-    /* Text — same warm-off-white as Ruthie */
-    --txt:       #edeae4;
-    --txt2:      #9c98ac;
-    --txt3:      #5e5c70;
+    /* Text — clean neutral off-white, high contrast against the dark bg */
+    --txt:       #f0f1f2;
+    --txt2:      #a8adb3;
+    --txt3:      #686e75;
 
     /* Mono — data readouts use monospace just like Ruthie HUD */
     --mono: 'JetBrains Mono', 'Courier New', monospace;
@@ -121,7 +121,7 @@
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background: radial-gradient(circle at 32% 32%, #f0909a, #a02848);
+    background: radial-gradient(circle at 32% 32%, #8fa9c9, #3d5570);
     box-shadow: 0 0 16px var(--rose-glow), 0 0 32px rgba(232,116,138,0.12);
     flex-shrink: 0;
     transition: box-shadow 0.3s ease;
@@ -146,13 +146,13 @@
   }
 
   @keyframes mini-orb-listening {
-    0%, 100% { box-shadow: 0 0 16px var(--rose-glow), 0 0 0 0 rgba(232,116,138,0.4); transform: scale(1); background: radial-gradient(circle at 32% 32%, #f0909a, #a02848); }
-    50%       { box-shadow: 0 0 26px var(--rose-glow), 0 0 0 10px rgba(232,116,138,0); transform: scale(1.08); background: radial-gradient(circle at 32% 32%, #f0909a, #a02848); }
+    0%, 100% { box-shadow: 0 0 16px var(--rose-glow), 0 0 0 0 rgba(232,116,138,0.4); transform: scale(1); background: radial-gradient(circle at 32% 32%, #8fa9c9, #3d5570); }
+    50%       { box-shadow: 0 0 26px var(--rose-glow), 0 0 0 10px rgba(232,116,138,0); transform: scale(1.08); background: radial-gradient(circle at 32% 32%, #8fa9c9, #3d5570); }
   }
 
   @keyframes mini-orb-speaking {
-    0%, 100% { box-shadow: 0 0 16px rgba(110,207,151,0.5); transform: scale(1); background: radial-gradient(circle at 32% 32%, #7ee0a8, #2a8e5e); }
-    50%       { box-shadow: 0 0 26px rgba(110,207,151,0.7); transform: scale(1.1); background: radial-gradient(circle at 32% 32%, #7ee0a8, #2a8e5e); }
+    0%, 100% { box-shadow: 0 0 16px rgba(110,207,151,0.5); transform: scale(1); background: radial-gradient(circle at 32% 32%, #8fc4a3, #5a8a70); }
+    50%       { box-shadow: 0 0 26px rgba(110,207,151,0.7); transform: scale(1.1); background: radial-gradient(circle at 32% 32%, #8fc4a3, #5a8a70); }
   }
 
   @keyframes pulse-orb {
@@ -268,7 +268,7 @@
 
   /* Square avatar = Ruthie HUD feel */
   .msg-avatar.rosie-av {
-    background: radial-gradient(circle at 32% 32%, #f0909a, #a02848);
+    background: radial-gradient(circle at 32% 32%, #8fa9c9, #3d5570);
     box-shadow: 0 0 8px rgba(232,116,138,0.25);
     border-radius: var(--radius-xs);
   }
@@ -299,7 +299,7 @@
   }
 
   .msg.user .msg-bubble {
-    background: linear-gradient(140deg, #9e2a44, var(--rose));
+    background: linear-gradient(140deg, #4a6584, var(--rose));
     color: white;
     border-top-right-radius: 3px;
   }
@@ -337,7 +337,7 @@
   .chip-list    { background: var(--amber-dim); color: var(--amber);    border: 1px solid rgba(240,192,96,0.2);  }
   .chip-profile { background: var(--rose-dim);  color: var(--rose);     border: 1px solid rgba(232,116,138,0.2); }
   .chip-delete  { background: var(--red-dim);   color: var(--red);      border: 1px solid rgba(224,96,96,0.2);   }
-  .chip-edit    { background: rgba(100,160,255,0.08); color: #80aeff;   border: 1px solid rgba(100,160,255,0.2); }
+  .chip-edit    { background: rgba(100,160,255,0.08); color: #8fa9c9;   border: 1px solid rgba(100,160,255,0.2); }
 
   /* typing indicator */
   .typing-dots {
@@ -426,7 +426,7 @@
     height: 40px;
     border-radius: var(--radius-sm);
     border: none;
-    background: linear-gradient(140deg, #9e2a44, var(--rose));
+    background: linear-gradient(140deg, #4a6584, var(--rose));
     color: white;
     display: flex;
     align-items: center;
@@ -442,7 +442,7 @@
   #mic-btn:active { transform: scale(0.91); }
   #mic-btn.recording {
     animation: mic-pulse 0.9s ease-in-out infinite;
-    background: linear-gradient(140deg, #b02020, #e04040);
+    background: linear-gradient(140deg, #9e4f48, #c96a62);
   }
 
   @keyframes mic-pulse {
@@ -467,7 +467,7 @@
   }
 
   #send-btn.active {
-    background: linear-gradient(140deg, #9e2a44, var(--rose));
+    background: linear-gradient(140deg, #4a6584, var(--rose));
     color: white;
     border-color: transparent;
     box-shadow: 0 2px 10px var(--rose-glow);
@@ -717,7 +717,7 @@
 
   .day-cell.today {
     background: var(--amber);
-    color: #1a1206;
+    color: #14171a;
     font-weight: 600;
     box-shadow: 0 0 10px rgba(240,192,96,0.5);
   }
@@ -838,7 +838,7 @@
 
   .day-cell.today {
     background: var(--amber);
-    color: #1a1206;
+    color: #14171a;
     font-weight: 700;
     box-shadow: 0 0 12px rgba(240,192,96,0.5);
   }
@@ -1187,7 +1187,7 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: radial-gradient(circle at 32% 32%, #f0c060, #a06a1a);
+    background: radial-gradient(circle at 32% 32%, #c9a876, #8a7350);
     box-shadow: 0 0 14px rgba(240,192,96,0.5), 0 0 0 0 rgba(240,192,96,0.4);
     transition: transform 0.18s;
     display: flex;
@@ -1349,7 +1349,7 @@
     height: 54px;
     border-radius: 50%;
     border: none;
-    background: linear-gradient(140deg, #9e2a44, var(--rose));
+    background: linear-gradient(140deg, #4a6584, var(--rose));
     color: white;
     display: flex;
     align-items: center;
@@ -1361,7 +1361,7 @@
   #mic-btn:active { transform: scale(0.9); }
   #mic-btn.recording {
     animation: mic-pulse 0.9s ease-in-out infinite;
-    background: linear-gradient(140deg, #b02020, #e04040);
+    background: linear-gradient(140deg, #9e4f48, #c96a62);
   }
   @keyframes mic-pulse {
     0%, 100% { box-shadow: 0 2px 16px rgba(220,60,60,0.4); }
@@ -1515,7 +1515,7 @@
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: radial-gradient(circle at 32% 32%, #f0909a, #a02848);
+    background: radial-gradient(circle at 32% 32%, #8fa9c9, #3d5570);
     box-shadow: 0 0 32px var(--rose-glow), 0 0 64px rgba(232,116,138,0.12);
     animation: float-orb 3s ease-in-out infinite;
     position: relative;
@@ -1570,7 +1570,7 @@
     padding: 13px;
     border-radius: var(--radius-sm);
     border: none;
-    background: linear-gradient(140deg, #9e2a44, var(--rose));
+    background: linear-gradient(140deg, #4a6584, var(--rose));
     color: white;
     font-family: 'DM Sans', sans-serif;
     font-size: 15px;
@@ -1807,7 +1807,7 @@
     padding: 14px;
     border-radius: var(--radius-sm);
     border: none;
-    background: linear-gradient(140deg, #9e2a44, var(--rose));
+    background: linear-gradient(140deg, #4a6584, var(--rose));
     color: white;
     font-family: 'DM Sans', sans-serif;
     font-size: 15px;
@@ -2071,8 +2071,8 @@
     <svg id="voice-orb-svg" viewBox="0 0 400 400">
       <defs>
         <radialGradient id="voiceCoreGradient" cx="35%" cy="35%">
-          <stop offset="0%" stop-color="#f0c060"/>
-          <stop offset="100%" stop-color="#a0682a"/>
+          <stop offset="0%" stop-color="#c9a876"/>
+          <stop offset="100%" stop-color="#8a7350"/>
         </radialGradient>
       </defs>
       <g id="voice-dashring"></g>
@@ -2385,7 +2385,7 @@
   <div style="font-size:12px; color:var(--txt3); text-align:center; margin:14px 0 8px;">— or —</div>
 
   <input class="input-field" type="text" id="join-code-input" placeholder="Enter a co-parent's invite code" style="text-transform:uppercase; text-align:center; letter-spacing:0.1em; margin-bottom:8px;" maxlength="6">
-  <button class="btn-primary" onclick="joinFamily()" style="margin-bottom:6px; background:linear-gradient(140deg, #2a7e9e, #74c8e8);">
+  <button class="btn-primary" onclick="joinFamily()" style="margin-bottom:6px; background:linear-gradient(140deg, #5a8a70, #8fc4a3);">
     Join a Family
   </button>
   <div id="family-status" style="text-align:center;font-size:13px;margin-top:6px;min-height:18px;color:var(--sage);"></div>
@@ -2399,7 +2399,7 @@
     Give a sitter a read-only link — today's schedule, allergies, emergency contacts, and any notes you leave. No login needed. Expires in 24 hours.
   </div>
 
-  <button class="btn-primary" onclick="generateSitterLink()" style="margin-bottom:10px; background:linear-gradient(140deg, #2a8e5e, #5ec888);">
+  <button class="btn-primary" onclick="generateSitterLink()" style="margin-bottom:10px; background:linear-gradient(140deg, #5a8a70, #6ba885);">
     Create Sitter Link
   </button>
   <div id="sitter-link-display" style="display:none; margin-bottom:14px;">
@@ -2416,7 +2416,7 @@
     Leave a note for whoever's home
   </div>
   <input class="input-field" type="text" id="quick-note-input" placeholder="e.g. Running 10 min late, traffic" style="margin-bottom:8px;">
-  <button class="btn-primary" onclick="postFamilyNote()" style="margin-bottom:6px; background:linear-gradient(140deg, #2a8e5e, #5ec888);">
+  <button class="btn-primary" onclick="postFamilyNote()" style="margin-bottom:6px; background:linear-gradient(140deg, #5a8a70, #6ba885);">
     Post Note
   </button>
   <div id="sitter-status" style="text-align:center;font-size:13px;margin-top:6px;min-height:18px;color:var(--sage);"></div>
@@ -3490,6 +3490,15 @@ function setStatus(msg, cls) {
   const bar = document.getElementById('status-bar');
   bar.textContent = msg;
   bar.className = cls;
+
+  // Mirror the same status into the full-screen voice mode hint, if it's open
+  const voiceHint = document.getElementById('voice-hint');
+  if (voiceHint) {
+    if (cls === 'listening') voiceHint.textContent = 'LISTENING…';
+    else if (cls === 'speaking') voiceHint.textContent = 'SPEAKING…';
+    else voiceHint.textContent = 'TAP TO SPEAK';
+    voiceHint.className = cls || '';
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -3989,8 +3998,8 @@ async function submitNewChore() {
   const recurring = document.getElementById('chore-recurring-input').checked;
   const status    = document.getElementById('chore-add-status');
 
-  if (!title) { status.textContent = 'Please enter a chore name.'; status.style.color = '#ff8080'; return; }
-  if (!childName) { status.textContent = 'Please choose a child.'; status.style.color = '#ff8080'; return; }
+  if (!title) { status.textContent = 'Please enter a chore name.'; status.style.color = '#d17a72'; return; }
+  if (!childName) { status.textContent = 'Please choose a child.'; status.style.color = '#d17a72'; return; }
 
   status.textContent = 'Adding…';
   status.style.color = 'var(--txt3)';
@@ -4002,7 +4011,7 @@ async function submitNewChore() {
       body: JSON.stringify({ title, childName, amount, recurring })
     });
     const data = await res.json();
-    if (!res.ok) { status.textContent = data.error?.message || 'Could not add chore.'; status.style.color = '#ff8080'; return; }
+    if (!res.ok) { status.textContent = data.error?.message || 'Could not add chore.'; status.style.color = '#d17a72'; return; }
 
     if (profileCache) {
       profileCache.chores = profileCache.chores || [];
@@ -4013,7 +4022,7 @@ async function submitNewChore() {
     closeAddChoreForm();
   } catch (err) {
     status.textContent = "Couldn't reach the server. Try again.";
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
   }
 }
 
@@ -4241,8 +4250,8 @@ function confirmScannedEvent() {
   const location = document.getElementById('scan-location-input').value.trim();
   const status   = document.getElementById('photo-scan-status');
 
-  if (!title) { status.textContent = 'Please enter a title.'; status.style.color = '#ff8080'; return; }
-  if (!date)  { status.textContent = 'Please confirm a date.'; status.style.color = '#ff8080'; return; }
+  if (!title) { status.textContent = 'Please enter a title.'; status.style.color = '#d17a72'; return; }
+  if (!date)  { status.textContent = 'Please confirm a date.'; status.style.color = '#d17a72'; return; }
 
   executeAction({
     type: 'ADD_EVENT',
@@ -4420,7 +4429,7 @@ async function saveELKey() {
   const status = document.getElementById('settings-status');
   if (!val || val.startsWith('•')) {
     status.textContent = 'Please paste your ElevenLabs API key.';
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
     return;
   }
 
@@ -4445,7 +4454,7 @@ async function saveELKey() {
     setTimeout(closeSettings, 1200);
   } catch (err) {
     status.textContent = "Couldn't save — check your connection and try again.";
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
   }
 }
 
@@ -4517,7 +4526,7 @@ async function generateInviteCode() {
 
     if (!res.ok) {
       status.textContent = data.error?.message || 'Could not generate a code.';
-      status.style.color = '#ff8080';
+      status.style.color = '#d17a72';
       return;
     }
 
@@ -4527,7 +4536,7 @@ async function generateInviteCode() {
     showToast('Invite code ready — share it with your co-parent');
   } catch (err) {
     status.textContent = "Couldn't reach the server. Try again.";
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
   }
 }
 
@@ -4537,7 +4546,7 @@ async function joinFamily() {
 
   if (!code) {
     status.textContent = 'Please enter an invite code.';
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
     return;
   }
 
@@ -4557,7 +4566,7 @@ async function joinFamily() {
 
     if (!res.ok) {
       status.textContent = data.error?.message || 'Could not join that family.';
-      status.style.color = '#ff8080';
+      status.style.color = '#d17a72';
       return;
     }
 
@@ -4586,7 +4595,7 @@ async function joinFamily() {
     }
   } catch (err) {
     status.textContent = "Couldn't reach the server. Try again.";
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
   }
 }
 
@@ -4611,7 +4620,7 @@ async function generateSitterLink() {
 
     if (!res.ok) {
       status.textContent = data.error?.message || 'Could not create a link.';
-      status.style.color = '#ff8080';
+      status.style.color = '#d17a72';
       return;
     }
 
@@ -4623,7 +4632,7 @@ async function generateSitterLink() {
     showToast('Sitter link ready — share it however you like');
   } catch (err) {
     status.textContent = "Couldn't reach the server. Try again.";
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
   }
 }
 
@@ -4652,7 +4661,7 @@ async function postFamilyNote() {
 
   if (!text) {
     status.textContent = 'Type a note first.';
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
     return;
   }
 
@@ -4672,7 +4681,7 @@ async function postFamilyNote() {
 
     if (!res.ok) {
       status.textContent = data.error?.message || 'Could not post the note.';
-      status.style.color = '#ff8080';
+      status.style.color = '#d17a72';
       return;
     }
 
@@ -4689,7 +4698,7 @@ async function postFamilyNote() {
     }
   } catch (err) {
     status.textContent = "Couldn't reach the server. Try again.";
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
   }
 }
 
@@ -4745,7 +4754,7 @@ function quickAddChild() {
 
   if (!name) {
     status.textContent = "Please enter the child's name.";
-    status.style.color = '#ff8080';
+    status.style.color = '#d17a72';
     return;
   }
 

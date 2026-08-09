@@ -22,6 +22,11 @@ const CERT_PATH    = `/etc/letsencrypt/live/${DOMAIN}`;
 const DATA_DIR     = path.join(__dirname, 'data');
 const USERS_FILE   = path.join(DATA_DIR, 'users.json');
 const FAMILIES_FILE = path.join(DATA_DIR, 'families.json');
+const USAGE_FILE    = path.join(DATA_DIR, 'usage.jsonl');
+
+// Only these accounts can view the usage dashboard — everyone else gets a 403.
+// Add more emails here as needed (e.g. a co-founder).
+const ADMIN_EMAILS = ['jsolem3@gmail.com', 'megantsolem@gmail.com'];
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -43,6 +48,7 @@ if (!ANTHROPIC_API_KEY) {
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({}));
 if (!fs.existsSync(FAMILIES_FILE)) fs.writeFileSync(FAMILIES_FILE, JSON.stringify({}));
+if (!fs.existsSync(USAGE_FILE)) fs.writeFileSync(USAGE_FILE, '');
 
 function readJSON(filePath) {
   try {
@@ -63,6 +69,39 @@ const readUsers      = () => readJSON(USERS_FILE);
 const writeUsers     = (u) => writeJSON(USERS_FILE, u);
 const readFamilies   = () => readJSON(FAMILIES_FILE);
 const writeFamilies  = (f) => writeJSON(FAMILIES_FILE, f);
+
+// ── Usage tracking — append-only log, one JSON line per action ──
+// Never stores message content, photos, or anything sensitive — just
+// the shape of usage: who, what action, when. Kept in a separate file
+// from real family data so it can never accidentally leak into a
+// family's own profile data.
+function logUsageEvent(email, familyId, action) {
+  try {
+    const line = JSON.stringify({
+      email,
+      familyId,
+      action,
+      at: new Date().toISOString()
+    }) + '\n';
+    fs.appendFileSync(USAGE_FILE, line);
+  } catch (err) {
+    // Never let logging failures break the actual feature being used
+    console.error('Usage log write failed:', err);
+  }
+}
+
+function readUsageEvents() {
+  try {
+    const raw = fs.readFileSync(USAGE_FILE, 'utf8');
+    if (!raw.trim()) return [];
+    return raw.trim().split('\n').map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    }).filter(Boolean);
+  } catch (err) {
+    console.error('Failed to read usage log:', err);
+    return [];
+  }
+}
 
 function defaultFamilyData() {
   return {
@@ -481,6 +520,92 @@ app.get('/api/family/members', requireAuth, (req, res) => {
   }));
 
   res.json({ members: memberNames });
+});
+
+// ══════════════════════════════════════════════
+// USAGE TRACKING — lightweight action log for the testing phase.
+// Never logs message content, photos, or personal data — just which
+// feature was used, by which family, and when.
+// ══════════════════════════════════════════════
+
+app.post('/api/usage/log', requireAuth, (req, res) => {
+  const { action } = req.body;
+  if (!action) return res.status(400).json({ error: { message: 'Action is required.' } });
+
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  logUsageEvent(req.userEmail, user.familyId, action);
+  res.json({ ok: true });
+});
+
+function requireAdmin(req, res, next) {
+  if (!ADMIN_EMAILS.includes(req.userEmail)) {
+    return res.status(403).json({ error: { message: 'Not authorized to view this.' } });
+  }
+  next();
+}
+
+app.get('/api/usage/stats', requireAuth, requireAdmin, (req, res) => {
+  const events  = readUsageEvents();
+  const users   = readUsers();
+  const families = readFamilies();
+
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // Action counts overall and in the last 7 days
+  const actionCounts = {};
+  const actionCounts7d = {};
+  events.forEach(e => {
+    actionCounts[e.action] = (actionCounts[e.action] || 0) + 1;
+    if (new Date(e.at) >= sevenDaysAgo) {
+      actionCounts7d[e.action] = (actionCounts7d[e.action] || 0) + 1;
+    }
+  });
+
+  // Per-family activity summary
+  const familyActivity = {};
+  events.forEach(e => {
+    if (!e.familyId) return;
+    if (!familyActivity[e.familyId]) {
+      familyActivity[e.familyId] = {
+        familyId: e.familyId,
+        members: families[e.familyId]?.members || [],
+        totalActions: 0,
+        last7Days: 0,
+        lastActive: null
+      };
+    }
+    const f = familyActivity[e.familyId];
+    f.totalActions++;
+    if (new Date(e.at) >= sevenDaysAgo) f.last7Days++;
+    if (!f.lastActive || new Date(e.at) > new Date(f.lastActive)) f.lastActive = e.at;
+  });
+
+  // Attach member display names
+  Object.values(familyActivity).forEach(f => {
+    f.memberNames = f.members.map(email => users[email]?.name || email);
+  });
+
+  const activeFamilies7d = Object.values(familyActivity).filter(f => f.last7Days > 0).length;
+  const activeFamilies30d = Object.values(familyActivity).filter(f =>
+    f.lastActive && new Date(f.lastActive) >= thirtyDaysAgo
+  ).length;
+
+  res.json({
+    totalEvents: events.length,
+    totalFamilies: Object.keys(families).length,
+    activeFamilies7d,
+    activeFamilies30d,
+    actionCounts,
+    actionCounts7d,
+    families: Object.values(familyActivity).sort((a, b) =>
+      new Date(b.lastActive || 0) - new Date(a.lastActive || 0)
+    )
+  });
 });
 
 // ══════════════════════════════════════════════

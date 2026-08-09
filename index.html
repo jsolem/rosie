@@ -1745,6 +1745,15 @@
     <!-- Day strip -->
     <div id="daystrip"></div>
 
+    <!-- Family Notes — "running late" style messages, shown to top since they're time-sensitive -->
+    <div id="family-notes-panel" class="wide-panel" style="display:none;">
+      <div class="data-panel-header">
+        📌 FAMILY NOTES
+        <span class="hud-count" id="family-notes-count">0</span>
+      </div>
+      <div id="family-notes-body" class="data-panel-body"></div>
+    </div>
+
     <!-- Radar clock -->
     <div id="radar-wrap">
       <svg id="radar-svg" viewBox="0 0 300 300">
@@ -2151,7 +2160,8 @@ function defaultProfile() {
       iceContacts: [],
       homeAddress: '',
       generalNotes: ''
-    }
+    },
+    familyNotes: []
   };
 }
 
@@ -2209,6 +2219,7 @@ const DB = {
   setHasSeenIntro: () => { profileCache.hasSeenIntro = true; DB.saveToServer(); },
   getEmergencyInfo: () => profileCache?.emergencyInfo || defaultProfile().emergencyInfo,
   setEmergencyInfo: (info) => { profileCache.emergencyInfo = info; DB.saveToServer(); },
+  getFamilyNotes: () => profileCache?.familyNotes || [],
 };
 
 // ══════════════════════════════════════════════
@@ -2673,6 +2684,7 @@ ACTION TYPES:
 - { "type": "CLEAR_GROCERY_CHECKED" }
 - { "type": "LOG_MEAL", "data": { "name": "string" } }
 - { "type": "UPDATE_EMERGENCY_INFO", "data": { "pediatrician": {"name","phone"}, "dentist": {"name","phone"}, "insurance": {"provider","policyNumber","phone"}, "iceContacts": [{"name","relationship","phone"}], "homeAddress": "string", "generalNotes": "string" } }
+- { "type": "POST_FAMILY_NOTE", "text": "string" }
 
 EXTRACTION RULES:
 When a parent mentions anything, extract and action it:
@@ -2684,6 +2696,7 @@ MEDS: "Jake takes Flonase 50mcg every morning" → ADD_MED (ALWAYS confirm dose/
 GROCERY: "we need milk and eggs" → ADD_GROCERY
 MEALS: "we had tacos last night" → LOG_MEAL
 EMERGENCY INFO: "our pediatrician is Dr. Smith, 555-1234" / "Grandma is our emergency contact" → UPDATE_EMERGENCY_INFO
+FAMILY NOTES: "tell my husband I'm running late" / "leave a note that we'll be home by 7" → POST_FAMILY_NOTE (write the note text as the other person would want to read it, e.g. "Running late, home by 7" not a first-person transcript)
 
 EDIT TRIGGERS: "actually", "change", "update", "wrong", "I meant", "reschedule", "move"
 DELETE TRIGGERS: "cancel", "remove", "delete", "take off", "never mind", "doesn't take it anymore"
@@ -2761,6 +2774,27 @@ function executeAction(action) {
         iceContacts: action.data.iceContacts || current.iceContacts
       };
       DB.setEmergencyInfo(updated);
+      break;
+    }
+
+    case 'POST_FAMILY_NOTE': {
+      const noteText = action.text || '';
+      if (noteText.trim()) {
+        fetch('/api/family/notes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ text: noteText.trim() })
+        }).then(res => res.json()).then(data => {
+          if (data.note && profileCache) {
+            profileCache.familyNotes = profileCache.familyNotes || [];
+            profileCache.familyNotes.unshift(data.note);
+            updateHud();
+          }
+        }).catch(err => console.error('Failed to post family note via voice:', err));
+      }
       break;
     }
 
@@ -3406,6 +3440,31 @@ function updateHud() {
   const grocery  = DB.getGrocery();
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // ── Family Notes — "running late" style messages, shown at the very top ──
+  const notes = DB.getFamilyNotes();
+  const notesPanel = document.getElementById('family-notes-panel');
+  const notesBody  = document.getElementById('family-notes-body');
+  const notesCount = document.getElementById('family-notes-count');
+  if (notesPanel && notesBody) {
+    if (notes.length > 0) {
+      notesPanel.style.display = 'block';
+      notesCount.textContent = notes.length;
+      notesBody.innerHTML = notes.slice(0, 5).map(n => `
+        <div class="data-row" style="align-items:flex-start;">
+          <div class="data-row-left" style="flex:1;">
+            <div class="data-row-label">${escapeHtml(n.text)}</div>
+            <div class="data-row-sub">${escapeHtml(n.author)} · ${new Date(n.createdAt).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })}</div>
+          </div>
+          <button onclick="dismissFamilyNote('${n.id}')" style="
+            background:none; border:none; color:var(--txt3); cursor:pointer;
+            font-size:16px; padding:0 2px; line-height:1; flex-shrink:0;
+          " title="Dismiss">✕</button>
+        </div>`).join('');
+    } else {
+      notesPanel.style.display = 'none';
+    }
+  }
+
   // ── Events gauges (one per event today, max visual ring = time-of-day progress) ──
   const todayEvts = events.filter(e => e.date === todayStr).sort((a,b) => (a.time||'').localeCompare(b.time||''));
   const evGaugeEl = document.getElementById('events-gauges');
@@ -3842,13 +3901,34 @@ async function postFamilyNote() {
     status.textContent = '✓ Posted — visible to your sitter and co-parent';
     status.style.color = 'var(--sage)';
     showToast('Note posted');
+
+    // Reflect it immediately on the dashboard, not just via toast
+    if (profileCache) {
+      profileCache.familyNotes = profileCache.familyNotes || [];
+      profileCache.familyNotes.unshift(data.note);
+      updateHud();
+    }
   } catch (err) {
     status.textContent = "Couldn't reach the server. Try again.";
     status.style.color = '#ff8080';
   }
 }
 
-
+async function dismissFamilyNote(noteId) {
+  try {
+    await fetch(`/api/family/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (profileCache?.familyNotes) {
+      profileCache.familyNotes = profileCache.familyNotes.filter(n => n.id !== noteId);
+    }
+    updateHud();
+  } catch (err) {
+    console.error('Failed to dismiss note:', err);
+    showToast("Couldn't remove that note");
+  }
+}
 
 function handleLogoutClick() {
   const btn = document.getElementById('logout-btn');

@@ -1846,6 +1846,9 @@
   display:none; position:fixed; bottom:0; left:50%;
   transform:translateX(-50%);
   width:100%; max-width:480px;
+  max-height:88vh;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
   background:var(--bg2);
   border-top:1px solid var(--border);
   border-radius:20px 20px 0 0;
@@ -3201,7 +3204,9 @@ function openSettings() {
   status.textContent = existing ? '✓ ElevenLabs voice is active on all your devices' : '';
   status.style.color = 'var(--sage)';
   document.getElementById('settings-overlay').style.display = 'block';
-  document.getElementById('settings-modal').style.display   = 'block';
+  const modal = document.getElementById('settings-modal');
+  modal.style.display = 'block';
+  modal.scrollTop = 0; // always open at the top, never stuck mid-scroll
 }
 
 function closeSettings() {

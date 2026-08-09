@@ -1659,6 +1659,129 @@
   .sitter-row-label { color: var(--txt); font-weight: 500; }
   .sitter-row-sub { color: var(--txt3); font-size: 12px; margin-top: 2px; }
 
+  /* ── WELCOME TOUR ── */
+  #tour-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 600;
+    flex-direction: column;
+  }
+
+  #tour-overlay.active { display: flex; }
+
+  #tour-skip {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    z-index: 2;
+    background: none;
+    border: none;
+    color: var(--txt3);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 8px 12px;
+  }
+
+  #tour-slides {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .tour-slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 32px;
+    text-align: center;
+    opacity: 0;
+    transform: translateX(40px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    pointer-events: none;
+  }
+
+  .tour-slide.active {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  .tour-slide.prev {
+    transform: translateX(-40px);
+  }
+
+  .tour-icon {
+    font-size: 52px;
+    margin-bottom: 22px;
+    filter: drop-shadow(0 0 20px rgba(232,116,138,0.25));
+  }
+
+  .tour-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    color: var(--txt);
+    margin-bottom: 12px;
+    line-height: 1.2;
+  }
+
+  .tour-desc {
+    font-size: 15px;
+    color: var(--txt2);
+    line-height: 1.6;
+    max-width: 340px;
+  }
+
+  #tour-footer {
+    flex-shrink: 0;
+    padding: 20px 24px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+
+  #tour-dots {
+    display: flex;
+    gap: 7px;
+  }
+
+  .tour-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--bg3);
+    transition: all 0.25s ease;
+  }
+
+  .tour-dot.active {
+    background: var(--rose);
+    width: 18px;
+    border-radius: 3px;
+  }
+
+  #tour-next-btn {
+    width: 100%;
+    max-width: 320px;
+    padding: 14px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: linear-gradient(140deg, #9e2a44, var(--rose));
+    color: white;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 3px 16px var(--rose-glow);
+  }
+
   /* ── RESPONSIVE ── */
   @media (min-width: 481px) {
     #app {
@@ -2026,6 +2149,18 @@
     </div>
     <div id="sitter-error" style="display:none;text-align:center;padding:60px 24px;color:var(--red);font-size:14px;line-height:1.5;"></div>
     <div id="sitter-content" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- ══════════════ WELCOME TOUR — shown once after signup ══════════════ -->
+<div id="tour-overlay">
+  <button id="tour-skip" onclick="finishTour()">Skip</button>
+
+  <div id="tour-slides"></div>
+
+  <div id="tour-footer">
+    <div id="tour-dots"></div>
+    <button id="tour-next-btn" onclick="tourNext()">Next</button>
   </div>
 </div>
 
@@ -2412,7 +2547,7 @@ async function handleSignup() {
     localStorage.setItem('rosie_session', JSON.stringify({ token: authToken, email: data.email, name: data.name }));
 
     await DB.loadFromServer();
-    launchApp();
+    startWelcomeTour();
   } catch (err2) {
     err.textContent = "Couldn't reach the server. Check your connection and try again.";
   }
@@ -4087,7 +4222,95 @@ function confirmScannedEvent() {
   closePhotoScanModal();
 }
 
+// ══════════════════════════════════════════════
+// WELCOME TOUR — shown once right after signup
+// ══════════════════════════════════════════════
+const TOUR_SLIDES = [
+  {
+    icon: '👋',
+    title: "Welcome to Rosie",
+    desc: "I'm here to help keep your family organized — schedules, medications, meals, all of it. Let's take a quick look at what I can do."
+  },
+  {
+    icon: '🎙️',
+    title: "Talk or type — or just snap a photo",
+    desc: "Tap the mic and talk to me naturally, type instead if that's easier, or use the camera icon to scan a school flyer or invitation and I'll add it to the schedule myself."
+  },
+  {
+    icon: '🍽️',
+    title: "Meal ideas, on demand",
+    desc: "Tell me what's in the fridge or what you're craving and I'll suggest dinner — I'll remember your family's allergies and preferences."
+  },
+  {
+    icon: '💰',
+    title: "Chores & allowance",
+    desc: "Add chores for your kids with a dollar value. They check them off (or just tell me), and I'll keep a running balance for each kid."
+  },
+  {
+    icon: '👨‍👩‍👧',
+    title: "Stay in sync with your co-parent",
+    desc: "Invite your partner from Settings — you'll both see the same schedule, kids, and chores, always up to date on both your phones."
+  },
+  {
+    icon: '👶',
+    title: "Babysitter-ready",
+    desc: "Generate a one-tap link for a sitter — today's schedule, allergies, and emergency contacts, no login needed. Leave a quick note like \"running late\" and they'll see it instantly."
+  }
+];
 
+let currentTourSlide = 0;
+
+function startWelcomeTour() {
+  const container = document.getElementById('tour-slides');
+  const dotsContainer = document.getElementById('tour-dots');
+
+  container.innerHTML = TOUR_SLIDES.map((slide, i) => `
+    <div class="tour-slide ${i === 0 ? 'active' : ''}" data-index="${i}">
+      <div class="tour-icon">${slide.icon}</div>
+      <div class="tour-title">${escapeHtml(slide.title)}</div>
+      <div class="tour-desc">${escapeHtml(slide.desc)}</div>
+    </div>`).join('');
+
+  dotsContainer.innerHTML = TOUR_SLIDES.map((_, i) =>
+    `<div class="tour-dot ${i === 0 ? 'active' : ''}"></div>`).join('');
+
+  currentTourSlide = 0;
+  updateTourNextButton();
+
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('tour-overlay').classList.add('active');
+}
+
+function tourNext() {
+  if (currentTourSlide >= TOUR_SLIDES.length - 1) {
+    finishTour();
+    return;
+  }
+
+  const slides = document.querySelectorAll('.tour-slide');
+  const dots   = document.querySelectorAll('.tour-dot');
+
+  slides[currentTourSlide].classList.remove('active');
+  slides[currentTourSlide].classList.add('prev');
+  currentTourSlide++;
+  slides[currentTourSlide].classList.remove('prev');
+  slides[currentTourSlide].classList.add('active');
+
+  dots[currentTourSlide - 1].classList.remove('active');
+  dots[currentTourSlide].classList.add('active');
+
+  updateTourNextButton();
+}
+
+function updateTourNextButton() {
+  const btn = document.getElementById('tour-next-btn');
+  btn.textContent = currentTourSlide >= TOUR_SLIDES.length - 1 ? "Let's get started" : 'Next';
+}
+
+function finishTour() {
+  document.getElementById('tour-overlay').classList.remove('active');
+  launchApp();
+}
 
 function openVoiceMode() {
   document.getElementById('voice-mode').classList.add('open');

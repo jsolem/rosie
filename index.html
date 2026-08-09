@@ -2470,6 +2470,14 @@
 
 <script>
 // ══════════════════════════════════════════════
+// STORAGE — server-synced, cached in memory for instant reads.
+// Every DB.get* / DB.set* call below behaves exactly as before from
+// the caller's point of view — nothing downstream needs to change.
+// ══════════════════════════════════════════════
+let authToken = null;
+let profileCache = null;
+let saveDebounceTimer = null;
+
 // ══════════════════════════════════════════════
 // THEMES — preset palettes + custom colors, applied as CSS variables
 // so every existing style picks them up automatically.

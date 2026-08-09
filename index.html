@@ -2314,6 +2314,41 @@
   </div>
 
   <div style="font-size:12px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">
+    🎨 Appearance
+  </div>
+  <div style="font-size:13px;color:var(--txt3);margin-bottom:12px;line-height:1.5;">
+    Pick a look, or set your own colors below.
+  </div>
+
+  <div id="theme-preset-grid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px;"></div>
+
+  <div style="font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin:6px 0 8px;">
+    Or set your own
+  </div>
+
+  <div style="display:flex; gap:10px; margin-bottom:14px;">
+    <div style="flex:1; text-align:center;">
+      <input type="color" id="custom-bg-input" value="#101214" style="width:100%; height:40px; border-radius:var(--radius-sm); border:1px solid var(--border); cursor:pointer; background:none;">
+      <div style="font-size:10px; color:var(--txt3); margin-top:4px;">Background</div>
+    </div>
+    <div style="flex:1; text-align:center;">
+      <input type="color" id="custom-accent-input" value="#7b9cc4" style="width:100%; height:40px; border-radius:var(--radius-sm); border:1px solid var(--border); cursor:pointer; background:none;">
+      <div style="font-size:10px; color:var(--txt3); margin-top:4px;">Accent</div>
+    </div>
+    <div style="flex:1; text-align:center;">
+      <input type="color" id="custom-text-input" value="#f0f1f2" style="width:100%; height:40px; border-radius:var(--radius-sm); border:1px solid var(--border); cursor:pointer; background:none;">
+      <div style="font-size:10px; color:var(--txt3); margin-top:4px;">Text</div>
+    </div>
+  </div>
+
+  <button class="btn-primary" onclick="applyCustomTheme()" style="margin-bottom:6px;">
+    Use My Colors
+  </button>
+  <div id="theme-status" style="text-align:center;font-size:12.5px;margin-top:6px;min-height:16px;color:var(--sage);"></div>
+
+  <div style="height:1px;background:var(--border);margin:22px 0 18px;"></div>
+
+  <div style="font-size:12px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">
     🎙 Voice — ElevenLabs API Key
   </div>
   <div style="font-size:13px;color:var(--txt3);margin-bottom:10px;line-height:1.5;">
@@ -2435,13 +2470,130 @@
 
 <script>
 // ══════════════════════════════════════════════
-// STORAGE — server-synced, cached in memory for instant reads.
-// Every DB.get* / DB.set* call below behaves exactly as before from
-// the caller's point of view — nothing downstream needs to change.
 // ══════════════════════════════════════════════
-let authToken = null;
-let profileCache = null;
-let saveDebounceTimer = null;
+// THEMES — preset palettes + custom colors, applied as CSS variables
+// so every existing style picks them up automatically.
+// ══════════════════════════════════════════════
+const THEME_PRESETS = {
+  dark: {
+    label: 'Dark Neutral',
+    bg: '#101214', bg2: '#16191c', bg3: '#1e2226', card: '#191d20',
+    border: 'rgba(255,255,255,0.08)', borderHi: 'rgba(255,255,255,0.15)',
+    rose: '#7b9cc4', green: '#7fb894', amber: '#c9a876', red: '#d17a72', lavender: '#9b93b0',
+    txt: '#f0f1f2', txt2: '#a8adb3', txt3: '#686e75'
+  },
+  light: {
+    label: 'Light',
+    bg: '#fafafa', bg2: '#f0f0f1', bg3: '#e6e6e8', card: '#ffffff',
+    border: 'rgba(0,0,0,0.10)', borderHi: 'rgba(0,0,0,0.18)',
+    rose: '#3d5a80', green: '#4a8462', amber: '#96723f', red: '#b8493f', lavender: '#6a5f8a',
+    txt: '#1a1c1e', txt2: '#54585e', txt3: '#8a8f96'
+  },
+  warm: {
+    label: 'Warm',
+    bg: '#faf6f0', bg2: '#f2ecdf', bg3: '#e8dfc9', card: '#fffdf8',
+    border: 'rgba(90,60,20,0.12)', borderHi: 'rgba(90,60,20,0.2)',
+    rose: '#b8623f', green: '#5c7f4f', amber: '#a3762f', red: '#b5473a', lavender: '#8a6d7a',
+    txt: '#2b2318', txt2: '#5c5040', txt3: '#918468'
+  },
+  midnight: {
+    label: 'Midnight',
+    bg: '#0a0e17', bg2: '#0f1520', bg3: '#161e2e', card: '#0d1220',
+    border: 'rgba(140,180,255,0.08)', borderHi: 'rgba(140,180,255,0.16)',
+    rose: '#6fb8d4', green: '#68b0a0', amber: '#a8a6d8', red: '#c97e8a', lavender: '#7e94d8',
+    txt: '#e8edf5', txt2: '#94a2b8', txt3: '#556074'
+  },
+  contrast: {
+    label: 'High Contrast',
+    bg: '#000000', bg2: '#0a0a0a', bg3: '#161616', card: '#000000',
+    border: 'rgba(255,255,255,0.25)', borderHi: 'rgba(255,255,255,0.4)',
+    rose: '#5ba8ff', green: '#5be0a0', amber: '#ffd050', red: '#ff6b60', lavender: '#c090ff',
+    txt: '#ffffff', txt2: '#d8d8d8', txt3: '#909090'
+  }
+};
+
+function applyTheme(themeData) {
+  const root = document.documentElement.style;
+  root.setProperty('--bg', themeData.bg);
+  root.setProperty('--bg2', themeData.bg2);
+  root.setProperty('--bg3', themeData.bg3);
+  root.setProperty('--card', themeData.card);
+  root.setProperty('--border', themeData.border);
+  root.setProperty('--border-hi', themeData.borderHi);
+  root.setProperty('--rose', themeData.rose);
+  root.setProperty('--green', themeData.green);
+  root.setProperty('--amber', themeData.amber);
+  root.setProperty('--red', themeData.red);
+  root.setProperty('--lavender', themeData.lavender);
+  root.setProperty('--txt', themeData.txt);
+  root.setProperty('--txt2', themeData.txt2);
+  root.setProperty('--txt3', themeData.txt3);
+
+  // Derived glow/dim variants, computed from the base colors
+  root.setProperty('--rose-dim', hexToRgba(themeData.rose, 0.14));
+  root.setProperty('--rose-glow', hexToRgba(themeData.rose, 0.30));
+  root.setProperty('--green-dim', hexToRgba(themeData.green, 0.14));
+  root.setProperty('--amber-dim', hexToRgba(themeData.amber, 0.14));
+  root.setProperty('--red-dim', hexToRgba(themeData.red, 0.14));
+  root.setProperty('--lav-dim', hexToRgba(themeData.lavender, 0.14));
+
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', themeData.bg);
+}
+
+function hexToRgba(hex, alpha) {
+  // Already an rgba() string (custom colors might be) — pass through
+  if (hex.startsWith('rgba') || hex.startsWith('rgb')) return hex;
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16);
+  const g = parseInt(clean.substring(2, 4), 16);
+  const b = parseInt(clean.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function applyThemeFromProfile() {
+  const themeSettings = DB.getTheme();
+  if (themeSettings.mode === 'custom' && themeSettings.custom) {
+    // Custom theme only overrides bg/accent/text — derive the rest sensibly
+    const base = THEME_PRESETS.dark;
+    const isLightBg = isColorLight(themeSettings.custom.bg);
+    applyTheme({
+      ...base,
+      bg: themeSettings.custom.bg,
+      bg2: adjustBrightness(themeSettings.custom.bg, isLightBg ? -6 : 6),
+      bg3: adjustBrightness(themeSettings.custom.bg, isLightBg ? -12 : 12),
+      card: adjustBrightness(themeSettings.custom.bg, isLightBg ? -3 : 3),
+      border: isLightBg ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)',
+      borderHi: isLightBg ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.15)',
+      rose: themeSettings.custom.accent,
+      txt: themeSettings.custom.text,
+      txt2: adjustBrightness(themeSettings.custom.text, isLightBg ? 35 : -35),
+      txt3: adjustBrightness(themeSettings.custom.text, isLightBg ? 65 : -55)
+    });
+  } else {
+    const preset = THEME_PRESETS[themeSettings.mode] || THEME_PRESETS.dark;
+    applyTheme(preset);
+  }
+}
+
+function isColorLight(hex) {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16);
+  const g = parseInt(clean.substring(2, 4), 16);
+  const b = parseInt(clean.substring(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+}
+
+function adjustBrightness(hex, amount) {
+  const clean = hex.replace('#', '');
+  let r = parseInt(clean.substring(0, 2), 16);
+  let g = parseInt(clean.substring(2, 4), 16);
+  let b = parseInt(clean.substring(4, 6), 16);
+  r = Math.max(0, Math.min(255, r + amount));
+  g = Math.max(0, Math.min(255, g + amount));
+  b = Math.max(0, Math.min(255, b + amount));
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
 
 function defaultProfile() {
   return {
@@ -2463,8 +2615,54 @@ function defaultProfile() {
     },
     familyNotes: [],
     chores: [],
-    allowanceBalances: {}
+    allowanceBalances: {},
+    theme: { mode: 'dark', custom: null }
   };
+}
+
+function renderThemePresetGrid() {
+  const grid = document.getElementById('theme-preset-grid');
+  if (!grid) return;
+
+  const current = DB.getTheme();
+
+  grid.innerHTML = Object.entries(THEME_PRESETS).map(([key, preset]) => `
+    <button onclick="selectThemePreset('${key}')" style="
+      display:flex; flex-direction:column; align-items:center; gap:6px;
+      padding:10px 6px; border-radius:var(--radius-sm);
+      border:2px solid ${current.mode === key ? 'var(--rose)' : 'var(--border)'};
+      background:var(--bg3); cursor:pointer;
+    ">
+      <div style="
+        width:100%; height:28px; border-radius:3px;
+        background:${preset.bg};
+        border:1px solid ${preset.border};
+        display:flex; align-items:center; justify-content:center;
+      ">
+        <div style="width:12px; height:12px; border-radius:50%; background:${preset.rose};"></div>
+      </div>
+      <div style="font-size:10.5px; color:var(--txt2);">${preset.label}</div>
+    </button>`).join('');
+}
+
+async function selectThemePreset(key) {
+  DB.setTheme({ mode: key, custom: null });
+  renderThemePresetGrid();
+  showToast(`${THEME_PRESETS[key].label} theme applied`);
+}
+
+async function applyCustomTheme() {
+  const bg     = document.getElementById('custom-bg-input').value;
+  const accent = document.getElementById('custom-accent-input').value;
+  const text   = document.getElementById('custom-text-input').value;
+  const status = document.getElementById('theme-status');
+
+  DB.setTheme({ mode: 'custom', custom: { bg, accent, text } });
+  renderThemePresetGrid();
+
+  status.textContent = '✓ Your colors are applied — synced to all devices';
+  status.style.color = 'var(--sage)';
+  showToast('Custom theme applied');
 }
 
 const DB = {
@@ -2524,6 +2722,8 @@ const DB = {
   getFamilyNotes: () => profileCache?.familyNotes || [],
   getChores: () => profileCache?.chores || [],
   getAllowanceBalances: () => profileCache?.allowanceBalances || {},
+  getTheme: () => profileCache?.theme || defaultProfile().theme,
+  setTheme: (theme) => { profileCache.theme = theme; DB.saveToServer(); applyThemeFromProfile(); },
 };
 
 // ══════════════════════════════════════════════
@@ -2737,6 +2937,7 @@ async function handleResetStep3() {
 // ══════════════════════════════════════════════
 function launchApp() {
   document.getElementById('login-screen').classList.add('hidden');
+  applyThemeFromProfile();
   const family   = DB.getFamily();
   const isNew    = !DB.getHasSeenIntro();
   const history  = DB.getConversation();
@@ -4417,6 +4618,7 @@ function openSettings() {
   document.getElementById('family-status').textContent = '';
 
   loadFamilyMembers();
+  renderThemePresetGrid();
 }
 
 function closeSettings() {

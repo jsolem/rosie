@@ -1811,6 +1811,20 @@
       <div id="grocery-body" class="data-panel-body"><div class="panel-empty">LIST EMPTY</div></div>
     </div>
 
+    <!-- Chores & Allowance -->
+    <div class="wide-panel">
+      <div class="data-panel-header">
+        CHORES
+        <button onclick="openAddChoreForm()" style="
+          background:var(--amber-dim); border:none; color:var(--amber);
+          font-family:var(--mono); font-size:10px; letter-spacing:0.06em;
+          padding:3px 10px; border-radius:20px; cursor:pointer;
+        ">+ ADD</button>
+      </div>
+      <div id="chores-body" class="data-panel-body"><div class="panel-empty">NO CHORES YET</div></div>
+      <div id="allowance-balances" style="margin-top:10px;"></div>
+    </div>
+
     <!-- Digest / conversation preview -->
     <div class="wide-panel" id="digest-panel">
       <div class="data-panel-header">RECENT ACTIVITY</div>
@@ -1990,6 +2004,40 @@
 <div id="toast"></div>
 
 <!-- Settings Modal -->
+<div id="chore-overlay" onclick="closeAddChoreForm()" style="
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,0.6); z-index:210;
+  backdrop-filter:blur(2px);
+"></div>
+<div id="chore-modal" style="
+  display:none; position:fixed; bottom:0; left:50%;
+  transform:translateX(-50%);
+  width:100%; max-width:480px;
+  background:var(--bg2);
+  border-top:1px solid var(--border);
+  border-radius:20px 20px 0 0;
+  z-index:211; padding:24px 24px 32px;
+">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+    <div style="font-family:'DM Serif Display',serif;font-size:19px;">Add a Chore</div>
+    <button class="icon-btn" onclick="closeAddChoreForm()">✕</button>
+  </div>
+
+  <input class="input-field" type="text" id="chore-title-input" placeholder="Chore (e.g. Make bed)" style="margin-bottom:8px;">
+  <select class="input-field" id="chore-child-select" style="margin-bottom:8px; cursor:pointer;">
+    <option value="">Which child?</option>
+  </select>
+  <input class="input-field" type="number" id="chore-amount-input" placeholder="Amount ($)" step="0.25" min="0" style="margin-bottom:12px;">
+
+  <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px; color:var(--txt2); font-size:13.5px; cursor:pointer;">
+    <input type="checkbox" id="chore-recurring-input" style="width:16px; height:16px; cursor:pointer;">
+    Repeats every day
+  </label>
+
+  <button class="btn-primary" onclick="submitNewChore()">Add Chore</button>
+  <div id="chore-add-status" style="text-align:center;font-size:12.5px;margin-top:8px;min-height:16px;color:var(--sage);"></div>
+</div>
+
 <div id="settings-overlay" onclick="closeSettings()" style="
   display:none; position:fixed; inset:0;
   background:rgba(0,0,0,0.6); z-index:200;
@@ -2161,7 +2209,9 @@ function defaultProfile() {
       homeAddress: '',
       generalNotes: ''
     },
-    familyNotes: []
+    familyNotes: [],
+    chores: [],
+    allowanceBalances: {}
   };
 }
 
@@ -2220,6 +2270,8 @@ const DB = {
   getEmergencyInfo: () => profileCache?.emergencyInfo || defaultProfile().emergencyInfo,
   setEmergencyInfo: (info) => { profileCache.emergencyInfo = info; DB.saveToServer(); },
   getFamilyNotes: () => profileCache?.familyNotes || [],
+  getChores: () => profileCache?.chores || [],
+  getAllowanceBalances: () => profileCache?.allowanceBalances || {},
 };
 
 // ══════════════════════════════════════════════
@@ -2685,6 +2737,8 @@ ACTION TYPES:
 - { "type": "LOG_MEAL", "data": { "name": "string" } }
 - { "type": "UPDATE_EMERGENCY_INFO", "data": { "pediatrician": {"name","phone"}, "dentist": {"name","phone"}, "insurance": {"provider","policyNumber","phone"}, "iceContacts": [{"name","relationship","phone"}], "homeAddress": "string", "generalNotes": "string" } }
 - { "type": "POST_FAMILY_NOTE", "text": "string" }
+- { "type": "ADD_CHORE", "data": { "title": "string", "childName": "string", "amount": number, "recurring": boolean } }
+- { "type": "COMPLETE_CHORE_BY_NAME", "title": "string", "childName": "string" }
 
 EXTRACTION RULES:
 When a parent mentions anything, extract and action it:
@@ -2697,6 +2751,7 @@ GROCERY: "we need milk and eggs" → ADD_GROCERY
 MEALS: "we had tacos last night" → LOG_MEAL
 EMERGENCY INFO: "our pediatrician is Dr. Smith, 555-1234" / "Grandma is our emergency contact" → UPDATE_EMERGENCY_INFO
 FAMILY NOTES: "tell my husband I'm running late" / "leave a note that we'll be home by 7" → POST_FAMILY_NOTE (write the note text as the other person would want to read it, e.g. "Running late, home by 7" not a first-person transcript)
+CHORES: "add a chore for Emma, make her bed, one dollar, every day" → ADD_CHORE. "Emma made her bed" / "Emma did the dishes" → COMPLETE_CHORE_BY_NAME (match against the chore title and child name; if you can't find a clear match, ask which chore they mean rather than guessing)
 
 EDIT TRIGGERS: "actually", "change", "update", "wrong", "I meant", "reschedule", "move"
 DELETE TRIGGERS: "cancel", "remove", "delete", "take off", "never mind", "doesn't take it anymore"
@@ -2794,6 +2849,52 @@ function executeAction(action) {
             updateHud();
           }
         }).catch(err => console.error('Failed to post family note via voice:', err));
+      }
+      break;
+    }
+
+    case 'ADD_CHORE': {
+      const choreData = action.data || {};
+      if (choreData.title && choreData.childName) {
+        fetch('/api/chores', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({
+            title: choreData.title,
+            childName: choreData.childName,
+            amount: choreData.amount || 0,
+            recurring: !!choreData.recurring
+          })
+        }).then(res => res.json()).then(data => {
+          if (data.chore && profileCache) {
+            profileCache.chores = profileCache.chores || [];
+            profileCache.chores.push(data.chore);
+            updateHud();
+          }
+        }).catch(err => console.error('Failed to add chore via voice:', err));
+      }
+      break;
+    }
+
+    case 'COMPLETE_CHORE_BY_NAME': {
+      const chores = DB.getChores();
+      const match = chores.find(c =>
+        c.title.toLowerCase().includes((action.title || '').toLowerCase()) &&
+        c.childName.toLowerCase() === (action.childName || '').toLowerCase() &&
+        !c.doneToday
+      );
+      if (match) {
+        fetch(`/api/chores/${match.id}/complete`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        }).then(res => res.json()).then(data => {
+          if (profileCache) {
+            const idx = profileCache.chores.findIndex(c => c.id === match.id);
+            if (idx > -1) profileCache.chores[idx] = data.chore;
+            profileCache.allowanceBalances = data.balances;
+            updateHud();
+          }
+        }).catch(err => console.error('Failed to complete chore via voice:', err));
       }
       break;
     }
@@ -3554,6 +3655,48 @@ function updateHud() {
           </div>`).join('')
       : '<div class="panel-empty">LIST EMPTY</div>';
   }
+
+  // ── Chores & Allowance ──
+  const chores   = DB.getChores();
+  const balances = DB.getAllowanceBalances();
+  const choresBodyEl = document.getElementById('chores-body');
+  if (choresBodyEl) {
+    choresBodyEl.innerHTML = chores.length > 0
+      ? chores.map(c => `
+          <div class="data-row grocery-row" onclick="${c.doneToday ? '' : `completeChore('${c.id}')`}" style="${c.doneToday ? 'opacity:0.5;' : ''}">
+            <div class="grocery-checkbox" style="${c.doneToday ? 'background:var(--green);border-color:var(--green);' : ''}"></div>
+            <div class="data-row-left" style="flex:1;">
+              <div class="data-row-label">${escapeHtml(c.title)}</div>
+              <div class="data-row-sub">${escapeHtml(c.childName)} · $${c.amount.toFixed(2)}${c.recurring ? ' · daily' : ''}</div>
+            </div>
+            <button onclick="event.stopPropagation(); deleteChore('${c.id}')" style="
+              background:none; border:none; color:var(--txt3); cursor:pointer;
+              font-size:15px; padding:0 4px; flex-shrink:0;
+            " title="Remove">✕</button>
+          </div>`).join('')
+      : '<div class="panel-empty">NO CHORES YET</div>';
+  }
+
+  const balancesEl = document.getElementById('allowance-balances');
+  if (balancesEl) {
+    const names = Object.keys(balances).filter(n => balances[n] > 0);
+    balancesEl.innerHTML = names.length > 0
+      ? names.map(name => `
+          <div class="data-row" style="background:var(--amber-dim); margin-bottom:5px;">
+            <div class="data-row-left">
+              <div class="data-row-label" style="color:var(--amber);">${escapeHtml(name)}'s balance</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-family:var(--mono); font-size:15px; color:var(--amber); font-weight:600;">$${balances[name].toFixed(2)}</span>
+              <button onclick="payoutChild('${escapeHtml(name)}')" style="
+                background:var(--green-dim); border:none; color:var(--green);
+                font-family:var(--mono); font-size:9px; letter-spacing:0.05em;
+                padding:4px 9px; border-radius:20px; cursor:pointer;
+              ">PAY OUT</button>
+            </div>
+          </div>`).join('')
+      : '';
+  }
 }
 
 function checkGroceryItem(itemId) {
@@ -3561,6 +3704,119 @@ function checkGroceryItem(itemId) {
   const updated = grocery.map(g => g.id === itemId ? { ...g, checked: true, checkedAt: new Date().toISOString() } : g);
   DB.setGrocery(updated);
   updateHud(); // instant visual feedback — item disappears from the list right away
+}
+
+// ══════════════════════════════════════════════
+// CHORES & ALLOWANCE
+// ══════════════════════════════════════════════
+
+function openAddChoreForm() {
+  const select = document.getElementById('chore-child-select');
+  const family = DB.getFamily();
+  select.innerHTML = '<option value="">Which child?</option>' +
+    (family.children || []).map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+
+  document.getElementById('chore-title-input').value = '';
+  document.getElementById('chore-amount-input').value = '';
+  document.getElementById('chore-recurring-input').checked = false;
+  document.getElementById('chore-add-status').textContent = '';
+
+  document.getElementById('chore-overlay').style.display = 'block';
+  document.getElementById('chore-modal').style.display = 'block';
+}
+
+function closeAddChoreForm() {
+  document.getElementById('chore-overlay').style.display = 'none';
+  document.getElementById('chore-modal').style.display = 'none';
+}
+
+async function submitNewChore() {
+  const title     = document.getElementById('chore-title-input').value.trim();
+  const childName = document.getElementById('chore-child-select').value;
+  const amount    = parseFloat(document.getElementById('chore-amount-input').value) || 0;
+  const recurring = document.getElementById('chore-recurring-input').checked;
+  const status    = document.getElementById('chore-add-status');
+
+  if (!title) { status.textContent = 'Please enter a chore name.'; status.style.color = '#ff8080'; return; }
+  if (!childName) { status.textContent = 'Please choose a child.'; status.style.color = '#ff8080'; return; }
+
+  status.textContent = 'Adding…';
+  status.style.color = 'var(--txt3)';
+
+  try {
+    const res = await fetch('/api/chores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ title, childName, amount, recurring })
+    });
+    const data = await res.json();
+    if (!res.ok) { status.textContent = data.error?.message || 'Could not add chore.'; status.style.color = '#ff8080'; return; }
+
+    if (profileCache) {
+      profileCache.chores = profileCache.chores || [];
+      profileCache.chores.push(data.chore);
+    }
+    updateHud();
+    showToast(`Added "${title}"`);
+    closeAddChoreForm();
+  } catch (err) {
+    status.textContent = "Couldn't reach the server. Try again.";
+    status.style.color = '#ff8080';
+  }
+}
+
+async function completeChore(choreId) {
+  try {
+    const res = await fetch(`/api/chores/${choreId}/complete`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error?.message || 'Could not update chore'); return; }
+
+    if (profileCache) {
+      const idx = profileCache.chores.findIndex(c => c.id === choreId);
+      if (idx > -1) profileCache.chores[idx] = data.chore;
+      profileCache.allowanceBalances = data.balances;
+    }
+    updateHud();
+    if (!data.alreadyDone) showToast(`+$${data.chore.amount.toFixed(2)} for ${data.chore.childName}!`);
+  } catch (err) {
+    showToast("Couldn't reach the server");
+  }
+}
+
+async function deleteChore(choreId) {
+  try {
+    await fetch(`/api/chores/${choreId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    if (profileCache?.chores) {
+      profileCache.chores = profileCache.chores.filter(c => c.id !== choreId);
+    }
+    updateHud();
+  } catch (err) {
+    showToast("Couldn't remove that chore");
+  }
+}
+
+async function payoutChild(childName) {
+  try {
+    const res = await fetch('/api/allowance/payout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ childName })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error?.message || 'Could not process payout'); return; }
+
+    if (profileCache) profileCache.allowanceBalances = data.balances;
+    updateHud();
+    showToast(`Paid ${childName} $${data.paidAmount.toFixed(2)}`);
+  } catch (err) {
+    showToast("Couldn't reach the server");
+  }
 }
 
 function escapeHtml(str) {

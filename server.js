@@ -83,7 +83,10 @@ function defaultFamilyData() {
       iceContacts: [], // [{ name, relationship, phone }]
       homeAddress: '',
       generalNotes: '' // e.g. "gate code is 4471", "spare key under mat"
-    }
+    },
+    familyNotes: [], // [{ id, text, author, createdAt }] — real-time notes like "running 10 min late"
+    sitterCode: null,
+    sitterCodeExpires: null
   };
 }
 
@@ -418,6 +421,114 @@ app.get('/api/family/members', requireAuth, (req, res) => {
   }));
 
   res.json({ members: memberNames });
+});
+
+// ══════════════════════════════════════════════
+// FAMILY NOTES — real-time messages like "running 10 min late"
+// ══════════════════════════════════════════════
+
+app.post('/api/family/notes', requireAuth, (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: { message: 'Note text is required.' } });
+  }
+
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  familyData.familyNotes = familyData.familyNotes || [];
+  familyData.familyNotes.unshift({
+    id: crypto.randomBytes(8).toString('hex'),
+    text: text.trim(),
+    author: user.name || req.userEmail,
+    createdAt: new Date().toISOString()
+  });
+
+  // Keep only the most recent 50 notes so this doesn't grow forever
+  familyData.familyNotes = familyData.familyNotes.slice(0, 50);
+
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ ok: true, note: familyData.familyNotes[0] });
+});
+
+app.delete('/api/family/notes/:noteId', requireAuth, (req, res) => {
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  familyData.familyNotes = (familyData.familyNotes || []).filter(n => n.id !== req.params.noteId);
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ ok: true });
+});
+
+// ══════════════════════════════════════════════
+// BABYSITTER VIEW — no login required, read-only, short-lived code
+// ══════════════════════════════════════════════
+
+// Generate (or refresh) a sitter access code — separate from the co-parent invite code
+app.post('/api/family/sitter-code', requireAuth, (req, res) => {
+  const users = readUsers();
+  const user  = users[req.userEmail];
+  if (!user) return res.status(404).json({ error: { message: 'User not found.' } });
+
+  const families = readFamilies();
+  const familyData = families[user.familyId] || defaultFamilyData();
+
+  const code = generateInviteCode();
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+
+  familyData.sitterCode = code;
+  familyData.sitterCodeExpires = expires;
+  families[user.familyId] = familyData;
+  writeFamilies(families);
+
+  res.json({ code, expiresAt: expires });
+});
+
+// Public read-only view — NO auth required, just a valid unexpired sitter code.
+// Returns only what a sitter needs: today's events, emergency info, family notes.
+// Deliberately excludes: grocery list, meds history beyond today, diet details,
+// conversation history, invite codes, or anything else not sitter-relevant.
+app.get('/api/sitter/:code', (req, res) => {
+  const code = (req.params.code || '').trim().toUpperCase();
+  const families = readFamilies();
+
+  const familyId = Object.keys(families).find(fid => {
+    const f = families[fid];
+    return f.sitterCode === code &&
+           f.sitterCodeExpires &&
+           new Date(f.sitterCodeExpires) > new Date();
+  });
+
+  if (!familyId) {
+    return res.status(404).json({ error: { message: 'This sitter link is invalid or has expired.' } });
+  }
+
+  const familyData = families[familyId];
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  res.json({
+    familyName: familyData.family?.name || '',
+    children: (familyData.family?.children || []).map(c => ({ name: c.name, age: c.age })),
+    todayEvents: (familyData.events || []).filter(e => e.date === todayStr),
+    activeMeds: (familyData.meds || []).filter(m => m.active).map(m => ({
+      name: m.name, childName: m.childName, dose: m.dose, schedule: m.schedule
+    })),
+    allergies: familyData.family?.diet?.allergies || [],
+    emergencyInfo: familyData.emergencyInfo || defaultFamilyData().emergencyInfo,
+    familyNotes: (familyData.familyNotes || []).slice(0, 10)
+  });
 });
 
 // ══════════════════════════════════════════════

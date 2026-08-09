@@ -1174,6 +1174,28 @@
   }
   .dock-side-btn:active .mini-orb { transform: scale(0.9); }
 
+  .dock-camera-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--txt2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.18s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .dock-camera-btn:active {
+    transform: scale(0.9);
+    background: var(--amber-dim);
+    color: var(--amber);
+    border-color: rgba(240,192,96,0.3);
+  }
+
   #dock-command-row textarea {
     flex: 1;
     background: none;
@@ -1859,6 +1881,13 @@
       <button class="dock-side-btn" onclick="openVoiceMode()" title="Voice mode">
         <div class="mini-orb" id="logo-orb"></div>
       </button>
+      <button class="dock-camera-btn" onclick="triggerPhotoUpload()" title="Scan a flyer or invitation">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </button>
+      <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none;" onchange="handlePhotoSelected(event)">
       <textarea id="text-input" placeholder="Type a command..." rows="1"
         oninput="autoResize(this); updateSendBtn()"
         onkeydown="handleKeydown(event)"></textarea>
@@ -2004,6 +2033,54 @@
 <div id="toast"></div>
 
 <!-- Settings Modal -->
+<div id="photo-scan-overlay" style="
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,0.7); z-index:220;
+  backdrop-filter:blur(2px);
+"></div>
+<div id="photo-scan-modal" style="
+  display:none; position:fixed; bottom:0; left:50%;
+  transform:translateX(-50%);
+  width:100%; max-width:480px;
+  max-height:88vh;
+  overflow-y:auto;
+  background:var(--bg2);
+  border-top:1px solid var(--border);
+  border-radius:20px 20px 0 0;
+  z-index:221; padding:24px 24px 32px;
+">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+    <div style="font-family:'DM Serif Display',serif;font-size:19px;">Scanning…</div>
+    <button class="icon-btn" onclick="closePhotoScanModal()">✕</button>
+  </div>
+
+  <div id="photo-scan-loading" style="text-align:center; padding:30px 10px;">
+    <div class="typing-dots" style="justify-content:center; margin-bottom:12px;"><span></span><span></span><span></span></div>
+    <div style="font-family:var(--mono); font-size:12px; color:var(--txt3);">Reading the flyer…</div>
+  </div>
+
+  <div id="photo-scan-error" style="display:none; text-align:center; padding:20px 10px; color:var(--red); font-size:14px;"></div>
+
+  <div id="photo-scan-review" style="display:none;">
+    <div style="font-size:13px; color:var(--txt3); margin-bottom:14px; line-height:1.5;">
+      Here's what I found — check it over before I add it.
+    </div>
+
+    <input class="input-field" type="text" id="scan-title-input" placeholder="Event title" style="margin-bottom:8px;">
+    <select class="input-field" id="scan-child-select" style="margin-bottom:8px; cursor:pointer;">
+      <option value="">Which child? (or leave blank for family)</option>
+    </select>
+    <input class="input-field" type="date" id="scan-date-input" style="margin-bottom:8px;">
+    <input class="input-field" type="time" id="scan-time-input" style="margin-bottom:8px;">
+    <input class="input-field" type="text" id="scan-location-input" placeholder="Location (optional)" style="margin-bottom:14px;">
+
+    <div id="scan-confidence-note" style="font-size:12px; color:var(--amber); margin-bottom:14px; display:none;"></div>
+
+    <button class="btn-primary" onclick="confirmScannedEvent()">Add to Schedule</button>
+    <div id="photo-scan-status" style="text-align:center;font-size:12.5px;margin-top:8px;min-height:16px;color:var(--sage);"></div>
+  </div>
+</div>
+
 <div id="chore-overlay" onclick="closeAddChoreForm()" style="
   display:none; position:fixed; inset:0;
   background:rgba(0,0,0,0.6); z-index:210;
@@ -3827,8 +3904,191 @@ function escapeHtml(str) {
 }
 
 // ══════════════════════════════════════════════
-// FULL-SCREEN VOICE MODE
+// PHOTO-TO-EVENT — snap a flyer/invitation, Rosie extracts the details
 // ══════════════════════════════════════════════
+let pendingScanImage = null; // holds the extracted event data awaiting confirmation
+
+function triggerPhotoUpload() {
+  document.getElementById('photo-input').click();
+}
+
+async function handlePhotoSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Reset the input so selecting the same file again still fires onchange
+  event.target.value = '';
+
+  openPhotoScanModal();
+
+  try {
+    const base64 = await fileToBase64(file);
+    const mediaType = file.type || 'image/jpeg';
+
+    await scanImageForEvent(base64, mediaType);
+  } catch (err) {
+    console.error('Photo scan error:', err);
+    showScanError("Couldn't read that photo. Try again with a clearer shot.");
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // reader.result is "data:image/jpeg;base64,XXXXX" — strip the prefix
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function openPhotoScanModal() {
+  document.getElementById('photo-scan-overlay').style.display = 'block';
+  document.getElementById('photo-scan-modal').style.display = 'block';
+  document.getElementById('photo-scan-loading').style.display = 'block';
+  document.getElementById('photo-scan-error').style.display = 'none';
+  document.getElementById('photo-scan-review').style.display = 'none';
+}
+
+function closePhotoScanModal() {
+  document.getElementById('photo-scan-overlay').style.display = 'none';
+  document.getElementById('photo-scan-modal').style.display = 'none';
+  pendingScanImage = null;
+}
+
+function showScanError(message) {
+  document.getElementById('photo-scan-loading').style.display = 'none';
+  document.getElementById('photo-scan-error').style.display = 'block';
+  document.getElementById('photo-scan-error').textContent = message;
+}
+
+async function scanImageForEvent(base64, mediaType) {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const todayName = now.toLocaleDateString('en-US', { weekday: 'long' });
+
+  const scanPrompt = `You are looking at a photo of a school flyer, permission slip, invitation, or similar document. Extract event information from it.
+
+Today's date is ${todayStr} (${todayName}). Use this to resolve relative dates like "next Friday", "this Saturday", or a bare day-of-week into an actual calendar date. If a date is genuinely ambiguous or missing entirely, make your best reasonable guess (e.g. the nearest future occurrence of a mentioned weekday) and flag your uncertainty.
+
+Respond with ONLY a JSON object, no other text, no markdown fences:
+{
+  "title": "short event title",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM in 24-hour format, or null if no time is shown",
+  "location": "location if mentioned, or null",
+  "confident": true or false,
+  "uncertaintyNote": "one short sentence explaining any guess you made, or null if fully confident",
+  "foundEvent": true or false
+}
+
+Set foundEvent to false if this image doesn't appear to contain any event/date information at all.`;
+
+  try {
+    const response = await fetch('/api/rosie/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            { type: 'text', text: scanPrompt }
+          ]
+        }]
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      showScanError(data.error.message || "Couldn't read that image.");
+      return;
+    }
+
+    const raw = data.content?.[0]?.text || '';
+    let parsed;
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+    } catch {
+      showScanError("I couldn't quite make sense of that image. Try a clearer photo.");
+      return;
+    }
+
+    if (!parsed.foundEvent) {
+      showScanError("I didn't spot any event details in that photo. Try a clearer shot of the flyer.");
+      return;
+    }
+
+    pendingScanImage = parsed;
+    populateScanReviewForm(parsed);
+
+  } catch (err) {
+    console.error('Scan request failed:', err);
+    showScanError("Couldn't reach Rosie right now. Check your connection and try again.");
+  }
+}
+
+function populateScanReviewForm(parsed) {
+  document.getElementById('photo-scan-loading').style.display = 'none';
+  document.getElementById('photo-scan-review').style.display = 'block';
+
+  document.getElementById('scan-title-input').value = parsed.title || '';
+  document.getElementById('scan-date-input').value = parsed.date || '';
+  document.getElementById('scan-time-input').value = parsed.time || '';
+  document.getElementById('scan-location-input').value = parsed.location || '';
+
+  const family = DB.getFamily();
+  const select = document.getElementById('scan-child-select');
+  select.innerHTML = '<option value="">Which child? (or leave blank for family)</option>' +
+    (family.children || []).map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+
+  const noteEl = document.getElementById('scan-confidence-note');
+  if (!parsed.confident && parsed.uncertaintyNote) {
+    noteEl.style.display = 'block';
+    noteEl.textContent = `⚠️ ${parsed.uncertaintyNote} Double check the date above.`;
+  } else {
+    noteEl.style.display = 'none';
+  }
+}
+
+function confirmScannedEvent() {
+  const title    = document.getElementById('scan-title-input').value.trim();
+  const childName = document.getElementById('scan-child-select').value;
+  const date     = document.getElementById('scan-date-input').value;
+  const time     = document.getElementById('scan-time-input').value;
+  const location = document.getElementById('scan-location-input').value.trim();
+  const status   = document.getElementById('photo-scan-status');
+
+  if (!title) { status.textContent = 'Please enter a title.'; status.style.color = '#ff8080'; return; }
+  if (!date)  { status.textContent = 'Please confirm a date.'; status.style.color = '#ff8080'; return; }
+
+  executeAction({
+    type: 'ADD_EVENT',
+    data: {
+      title,
+      childName: childName || null,
+      date,
+      time: time || null,
+      location: location || null,
+      recurring: false
+    }
+  });
+
+  updateHud();
+  updatePanel();
+  showToast(`Added "${title}" to the schedule`);
+  closePhotoScanModal();
+}
+
+
+
 function openVoiceMode() {
   document.getElementById('voice-mode').classList.add('open');
 }

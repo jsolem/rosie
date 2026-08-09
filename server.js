@@ -75,7 +75,15 @@ function defaultFamilyData() {
     hasSeenIntro: false,
     inviteCode: null,
     inviteCodeExpires: null,
-    members: [] // array of emails belonging to this family
+    members: [], // array of emails belonging to this family
+    emergencyInfo: {
+      pediatrician: { name: '', phone: '', notes: '' },
+      dentist: { name: '', phone: '' },
+      insurance: { provider: '', policyNumber: '', phone: '' },
+      iceContacts: [], // [{ name, relationship, phone }]
+      homeAddress: '',
+      generalNotes: '' // e.g. "gate code is 4471", "spare key under mat"
+    }
   };
 }
 

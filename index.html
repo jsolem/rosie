@@ -871,12 +871,13 @@
 
   #radar-clock {
     font-family: var(--mono);
-    font-size: 44px;
+    font-size: 36px;
     font-weight: 500;
     color: var(--amber);
     text-shadow: 0 0 24px rgba(240,192,96,0.4);
     letter-spacing: 0.02em;
     line-height: 1;
+    white-space: nowrap;
   }
 
   #radar-date {
@@ -1035,6 +1036,29 @@
   }
   .status-given { background: var(--green-dim); color: var(--green); }
   .status-due   { background: var(--red-dim);   color: var(--red); }
+
+  .grocery-row {
+    justify-content: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .grocery-row:active {
+    background: var(--bg2);
+    opacity: 0.6;
+  }
+  .grocery-checkbox {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--amber);
+    border-radius: 3px;
+    flex-shrink: 0;
+    opacity: 0.6;
+  }
+  .grocery-row:active .grocery-checkbox {
+    background: var(--amber);
+  }
 
   .wide-panel {
     background: var(--card);
@@ -1719,7 +1743,6 @@
       <div class="dock-status-right">
         <button class="dock-icon-btn" onclick="openPanel()" title="Family info">👨‍👩‍👧</button>
         <button class="dock-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
-        <button class="dock-icon-btn" onclick="handleLogout()" title="Sign out">↩</button>
       </div>
     </div>
 
@@ -1863,6 +1886,36 @@
     Remove key — use browser voice
   </button>
   <div id="settings-status" style="text-align:center;font-size:13px;margin-top:10px;min-height:18px;color:var(--sage);"></div>
+
+  <div style="height:1px;background:var(--border);margin:22px 0 18px;"></div>
+
+  <div style="font-size:12px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">
+    ⚡ Quick Setup — Add a Child
+  </div>
+  <div style="font-size:13px;color:var(--txt3);margin-bottom:12px;line-height:1.5;">
+    Prefer typing over talking? Fill this in and Rosie will remember it — same as if you told her out loud.
+  </div>
+
+  <input class="input-field" type="text" id="qs-name" placeholder="Child's name" style="margin-bottom:8px;">
+  <input class="input-field" type="number" id="qs-age" placeholder="Age" style="margin-bottom:8px;" min="0" max="25">
+  <input class="input-field" type="text" id="qs-school" placeholder="School (optional)" style="margin-bottom:8px;">
+  <input class="input-field" type="text" id="qs-grade" placeholder="Grade (optional)" style="margin-bottom:14px;">
+
+  <button class="btn-primary" onclick="quickAddChild()" style="margin-bottom:6px;">
+    Add Child
+  </button>
+  <div id="qs-status" style="text-align:center;font-size:13px;margin-top:6px;min-height:18px;color:var(--sage);"></div>
+
+  <div style="height:1px;background:var(--border);margin:22px 0 16px;"></div>
+
+  <button id="logout-btn" onclick="handleLogoutClick()" style="
+    width:100%; padding:12px; border-radius:var(--radius-sm);
+    border:1px solid var(--red-dim); background:none;
+    color:var(--red); font-family:'DM Sans',sans-serif;
+    font-size:14px; cursor:pointer; opacity:0.75;
+  ">
+    Sign Out
+  </button>
 </div>
 
 <script>
@@ -2168,7 +2221,7 @@ function launchApp() {
   startHudClock();
   updateHud();
   if (isNew) {
-    typeMessage("Hi! I'm Rosie. I'm here to help keep your family organized — schedules, medications, meals, all of it. Just talk to me like you'd talk to a friend. Tell me about your family and I'll remember everything. What would you like to start with?");
+    typeMessage("Hi! I'm Rosie — I'll help keep your family organized: schedules, medications, meals, all of it.\n\nLet's get you set up. First, tell me about your kids — just say something like \"I have a daughter named Emma, she's 7 and goes to Lincoln Elementary.\" Add one child at a time, or all at once, whatever's easiest.\n\nOnce I know your kids, I'll ask about any allergies or diet preferences, then we can add anything else — upcoming events, medications, whatever's on your mind.\n\nPrefer to just type everything out yourself instead of a back-and-forth? Tap the ⚙️ Settings icon and use \"Quick Setup\" to fill it all in at once.\n\nReady when you are — what's your child's name?\");
   } else {
     generateGreeting(family);
   }
@@ -2915,7 +2968,7 @@ function startHudClock() {
 
 function updateClock() {
   const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
 
   const topbarTime = document.getElementById('topbar-time');
@@ -3076,9 +3129,20 @@ function updateHud() {
   const grocBodyEl = document.getElementById('grocery-body');
   if (grocBodyEl) {
     grocBodyEl.innerHTML = unchecked.length > 0
-      ? unchecked.map(g => `<div class="data-row"><div class="data-row-label">${escapeHtml(g.text)}</div></div>`).join('')
+      ? unchecked.map(g => `
+          <div class="data-row grocery-row" onclick="checkGroceryItem('${g.id}')">
+            <div class="grocery-checkbox"></div>
+            <div class="data-row-label">${escapeHtml(g.text)}</div>
+          </div>`).join('')
       : '<div class="panel-empty">LIST EMPTY</div>';
   }
+}
+
+function checkGroceryItem(itemId) {
+  const grocery = DB.getGrocery();
+  const updated = grocery.map(g => g.id === itemId ? { ...g, checked: true, checkedAt: new Date().toISOString() } : g);
+  DB.setGrocery(updated);
+  updateHud(); // instant visual feedback — item disappears from the list right away
 }
 
 function escapeHtml(str) {
@@ -3197,6 +3261,70 @@ async function clearELKey() {
   document.getElementById('settings-status').textContent = 'Key removed — using browser voice on all devices.';
   document.getElementById('settings-status').style.color = 'var(--txt3)';
   showToast('Switched to browser voice');
+}
+
+let logoutConfirmPending = false;
+let logoutConfirmTimer = null;
+
+function handleLogoutClick() {
+  const btn = document.getElementById('logout-btn');
+
+  if (!logoutConfirmPending) {
+    logoutConfirmPending = true;
+    btn.textContent = 'Tap again to confirm sign out';
+    btn.style.opacity = '1';
+    btn.style.background = 'var(--red-dim)';
+
+    logoutConfirmTimer = setTimeout(() => {
+      logoutConfirmPending = false;
+      btn.textContent = 'Sign Out';
+      btn.style.opacity = '0.75';
+      btn.style.background = 'none';
+    }, 3000);
+    return;
+  }
+
+  clearTimeout(logoutConfirmTimer);
+  logoutConfirmPending = false;
+  closeSettings();
+  handleLogout();
+}
+
+function quickAddChild() {
+  const name   = document.getElementById('qs-name').value.trim();
+  const age    = document.getElementById('qs-age').value.trim();
+  const school = document.getElementById('qs-school').value.trim();
+  const grade  = document.getElementById('qs-grade').value.trim();
+  const status = document.getElementById('qs-status');
+
+  if (!name) {
+    status.textContent = "Please enter the child's name.";
+    status.style.color = '#ff8080';
+    return;
+  }
+
+  // Route through the same action pipeline the AI uses, so this
+  // behaves identically to telling Rosie out loud.
+  executeAction({
+    type: 'ADD_CHILD',
+    data: {
+      name,
+      age: age ? parseInt(age, 10) : null,
+      school: school || '',
+      grade: grade || ''
+    }
+  });
+
+  status.textContent = `✓ Added ${name} — synced everywhere.`;
+  status.style.color = 'var(--sage)';
+  document.getElementById('qs-name').value = '';
+  document.getElementById('qs-age').value = '';
+  document.getElementById('qs-school').value = '';
+  document.getElementById('qs-grade').value = '';
+
+  updateHud();
+  updatePanel();
+  showToast(`Added ${name} to your family`);
 }
 
 // ══════════════════════════════════════════════
